@@ -8,8 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApplicationConfigurationTest {
 
-    private final ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer = new ApplicationConfiguration.BrowserHistoryConfigurer();
-
     @Test
     void testResourceLocations() {
         String[] resourceLocations = ApplicationConfiguration.RESOURCE_LOCATIONS;
@@ -24,6 +22,9 @@ class ApplicationConfigurationTest {
 
     @Test
     void testAddResourceHandlers() {
+        ApplicationConfiguration configuration = new ApplicationConfiguration();
+        ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer = configuration.new BrowserHistoryConfigurer();
+
         ResourceHandlerRegistry registry = new ResourceHandlerRegistry();
         ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(registry);
 
