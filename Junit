@@ -1,8 +1,16 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
 import javax.servlet.http.HttpServletRequest;
-import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.HashSet;
+import java.util.Set;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class MutableHttpServletRequestTest {
 
@@ -43,5 +51,55 @@ class MutableHttpServletRequestTest {
 
         mutableRequest.putHeader(headerName, customValue);
         assertEquals(customValue, mutableRequest.getHeader(headerName));
+    }
+
+    @Test
+    void testGetHeaderNames() {
+        // Custom headers
+        mutableRequest.putHeader("X-Custom-Header1", "CustomValue1");
+        mutableRequest.putHeader("X-Custom-Header2", "CustomValue2");
+
+        // Mocking original request headers
+        Set<String> originalHeaderNames = new HashSet<>();
+        originalHeaderNames.add("X-Original-Header1");
+        originalHeaderNames.add("X-Original-Header2");
+
+        when(mockRequest.getHeaderNames()).thenReturn(Collections.enumeration(originalHeaderNames));
+
+        Enumeration<String> headerNames = mutableRequest.getHeaderNames();
+
+        Set<String> headerNamesSet = new HashSet<>();
+        while (headerNames.hasMoreElements()) {
+            headerNamesSet.add(headerNames.nextElement());
+        }
+
+        assertTrue(headerNamesSet.contains("X-Custom-Header1"));
+        assertTrue(headerNamesSet.contains("X-Custom-Header2"));
+        assertTrue(headerNamesSet.contains("X-Original-Header1"));
+        assertTrue(headerNamesSet.contains("X-Original-Header2"));
+    }
+
+    @Test
+    void testGetHeaders() {
+        String headerName = "X-Custom-Header";
+        String customHeaderValue = "CustomValue";
+        mutableRequest.putHeader(headerName, customHeaderValue);
+
+        Set<String> originalHeaderValues = new HashSet<>();
+        originalHeaderValues.add("OriginalValue1");
+        originalHeaderValues.add("OriginalValue2");
+
+        when(mockRequest.getHeaders(headerName)).thenReturn(Collections.enumeration(originalHeaderValues));
+
+        Enumeration<String> headerValues = mutableRequest.getHeaders(headerName);
+
+        Set<String> headerValuesSet = new HashSet<>();
+        while (headerValues.hasMoreElements()) {
+            headerValuesSet.add(headerValues.nextElement());
+        }
+
+        assertTrue(headerValuesSet.contains("CustomValue"));
+        assertTrue(headerValuesSet.contains("OriginalValue1"));
+        assertTrue(headerValuesSet.contains("OriginalValue2"));
     }
 }
