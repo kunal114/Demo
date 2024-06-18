@@ -1,47 +1,32 @@
+package net.jpmchase.poef.dashboardmgr.config;
+
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.web.servlet.resource.ResourceResolver;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.test.context.support.WithMockUser;
+import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.ArrayList;
-import java.util.List;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.when;
+@SpringBootTest
+@AutoConfigureMockMvc
+public class SecurityConfigurationTest {
 
-class ApplicationConfigurationTest {
+    @Autowired
+    private MockMvc mockMvc;
 
-    @Mock
-    private ResourceHandlerRegistry resourceHandlerRegistry;
-
-    private final ApplicationConfiguration configuration = new ApplicationConfiguration();
-    private final ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer = configuration.new BrowserHistoryConfigurer();
-
-    public ApplicationConfigurationTest() {
-        MockitoAnnotations.openMocks(this);
+    @Test
+    public void whenUnauthenticated_thenAccessAllowed() throws Exception {
+        mockMvc.perform(get("/"))
+               .andExpect(status().isOk());
     }
 
     @Test
-    void testResourceLocations() {
-        String[] resourceLocations = ApplicationConfiguration.RESOURCE_LOCATIONS;
-        assertEquals(6, resourceLocations.length);
-        assertEquals("classpath:/META-INF/resources/", resourceLocations[0]);
-        assertEquals("classpath:/resources/", resourceLocations[1]);
-        assertEquals("classpath:/static/", resourceLocations[2]);
-        assertEquals("classpath:/public/", resourceLocations[3]);
-        assertEquals("classpath:/", resourceLocations[4]);
-        assertEquals("classpath:/***", resourceLocations[5]);
-    }
-
-    @Test
-    void testAddResourceHandlers() {
-        List<ResourceResolver> resolvers = new ArrayList<>();
-        when(resourceHandlerRegistry.getResolvers()).thenReturn(resolvers);
-
-        ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(resourceHandlerRegistry);
-
-        assertTrue(resolver instanceof BrowserHistoryIndexResolver);
-        assertTrue(resolvers.contains(resolver));
+    @WithMockUser
+    public void whenAuthenticated_thenAccessAllowed() throws Exception {
+        mockMvc.perform(get("/"))
+               .andExpect(status().isOk());
     }
 }
