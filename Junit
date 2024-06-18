@@ -1,55 +1,45 @@
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInstance;
-import org.springframework.mock.web.MockServletContext;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
-import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
-import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
+import javax.sql.DataSource;
+import java.util.Properties;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class SecurityConfigurationTest {
+@ExtendWith(SpringExtension.class)
+@Import(AnsdsAurorallySqlConfigurationLocal.class)
+public class AnsdsAurorallySqlConfigurationLocalTest {
 
-    private MockMvc mockMvc;
-    private SecurityConfiguration securityConfiguration;
+    @Autowired
+    private DataSource dataSource;
 
-    @BeforeAll
-    void setup() {
-        securityConfiguration = new SecurityConfiguration();
-        AnnotationConfigWebApplicationContext context = new AnnotationConfigWebApplicationContext();
-        context.setServletContext(new MockServletContext());
-        context.register(SecurityConfiguration.class);
-        context.refresh();
-
-        SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
-        assertNotNull(filterChain);
-
-        this.mockMvc = MockMvcBuilders.webAppContextSetup(context).addFilters(filterChain).build();
+    @Test
+    public void testDataSourceWithIAMAuth() {
+        Properties props = dataSource.getConnectionProperties();
+        assertNotNull(props);
+        assertEquals("true", props.getProperty("PROP_AWS_IAM"));
     }
 
     @Test
-    void testPublicEndpointsAreAccessible() throws Exception {
-        mockMvc.perform(MockMvcRequestBuilders.get("/"))
-                .andExpect(MockMvcResultMatchers.status().isOk());
+    public void testDataSourceWithPasswordAuth() {
+        Properties props = dataSource.getConnectionProperties();
+        assertNotNull(props);
+        assertEquals("false", props.getProperty("PROP_AWS_IAM"));
+        assertNotNull(props.getProperty("password"));
     }
 
-    @Test
-    void testFilterChainBean() throws Exception {
-        SecurityFilterChain filterChain = securityConfiguration.filterChain(HttpSecurity.http());
-        assertNotNull(filterChain);
-    }
-
-    @Test
-    void testWebSecurityCustomizerBean() throws Exception {
-        WebSecurityCustomizer webSecurityCustomizer = securityConfiguration.webSecurityCustomizer();
-        assertNotNull(webSecurityCustomizer);
-
-        Object ignoreRequestMatchers = ReflectionTestUtils.invokeMethod(webSecurityCustomizer, "ignoring");
-        assertNotNull(ignoreRequestMatchers);
+    @Configuration
+    static class TestConfig {
+        @Bean
+        public String dbAuthToken() {
+            // Return "na" for IAM auth test, or a valid password for password auth test
+            return "na";
+        }
     }
 }
