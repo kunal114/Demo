@@ -1,43 +1,70 @@
+You're right, using beans might be overkill for this specific unit test. We can simplify the tests by directly instantiating the configuration class and mocking the required dependencies.
+
+Here's a simplified version of the JUnit 5 test class without using beans:
+
+```java
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
-import javax.servlet.http.HttpServletRequest;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import javax.sql.DataSource;
+import java.util.Properties;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
-class MOCLoggingFilterTest {
-    // ... (existing setup and other test cases)
+public class AusRdsAuroraMySqlConfigurationLocalTest {
 
-    @Test
-    void testPopulateJanusId() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        String customerId = "123456";
-        when(mockRequest.getAttribute("someAttribute")).thenReturn(customerId);
+    @InjectMocks
+    private AusRdsAuroraMySqlConfigurationLocal configuration;
 
-        Method populateJanusIdMethod = MOCLoggingFilter.class.getDeclaredMethod("populateJanusId", HttpServletRequest.class);
-        populateJanusIdMethod.setAccessible(true);
-        populateJanusIdMethod.invoke(filter, mockRequest);
+    @Mock
+    private ConfigBase configBase;
 
-        verify(mockRequest, times(1)).setAttribute(Constants.JANUS_SID, customerId);
-        // Add additional verifications if needed
+    @Value("${dbAuthToken:na}")
+    private String dbAuthToken;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
     }
 
     @Test
-    void testPopulateJanusIdWithEmptyCustomerId() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        String customerId = "";
-        when(mockRequest.getAttribute("someAttribute")).thenReturn(customerId);
+    void testDataSourceWhenAuthTokenIsNa() {
+        dbAuthToken = "na";
+        when(configBase.getProps()).thenReturn(new Properties());
 
-        Method populateJanusIdMethod = MOCLoggingFilter.class.getDeclaredMethod("populateJanusId", HttpServletRequest.class);
-        populateJanusIdMethod.setAccessible(true);
-        populateJanusIdMethod.invoke(filter, mockRequest);
+        DataSource dataSource = configuration.ausRdsAuroraMySqlDataSource();
+        Properties props = ((DriverManagerDataSource) dataSource).getConnectionProperties();
 
-        verify(mockRequest, never()).setAttribute(eq(Constants.JANUS_SID), anyString());
-        // Add additional verifications if needed
+        assertThat(props.getProperty("PROP_AWS_IAM")).isEqualTo(Boolean.TRUE.toString());
+        assertThat(props.getProperty("password")).isNull();
     }
 
-    // ... (any additional test cases)
+    @Test
+    void testDataSourceWhenAuthTokenIsProvided() {
+        dbAuthToken = "someAuthToken";
+        when(configBase.getProps()).thenReturn(new Properties());
+
+        DataSource dataSource = configuration.ausRdsAuroraMySqlDataSource();
+        Properties props = ((DriverManagerDataSource) dataSource).getConnectionProperties();
+
+        assertThat(props.getProperty("PROP_AWS_IAM")).isEqualTo(Boolean.FALSE.toString());
+        assertThat(props.getProperty("password")).isEqualTo("someAuthToken");
+    }
 }
+```
+
+### Explanation:
+
+1. **Mockito Setup**:
+    - We use `@InjectMocks` to create an instance of `AusRdsAuroraMySqlConfigurationLocal` and inject the mocks.
+    - We use `@Mock` to create a mock instance of `ConfigBase`.
+    - `MockitoAnnotations.openMocks(this)` initializes the mocks before each test.
+
+2. **Test Methods**:
+    - `testDataSource
