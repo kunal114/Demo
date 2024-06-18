@@ -1,42 +1,32 @@
-You're right, using beans might be overkill for this specific unit test. We can simplify the tests by directly instantiating the configuration class and mocking the required dependencies.
-
-Here's a simplified version of the JUnit 5 test class without using beans:
-
-```java
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
 import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
 
 public class AusRdsAuroraMySqlConfigurationLocalTest {
 
-    @InjectMocks
     private AusRdsAuroraMySqlConfigurationLocal configuration;
-
-    @Mock
-    private ConfigBase configBase;
-
-    @Value("${dbAuthToken:na}")
-    private String dbAuthToken;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
+        configuration = new AusRdsAuroraMySqlConfigurationLocal() {
+            @Override
+            protected Properties getProps() {
+                Properties props = new Properties();
+                // Set default properties if needed
+                return props;
+            }
+        };
     }
 
     @Test
     void testDataSourceWhenAuthTokenIsNa() {
-        dbAuthToken = "na";
-        when(configBase.getProps()).thenReturn(new Properties());
+        // Set dbAuthToken to "na"
+        configuration.dbAuthToken = "na";
 
         DataSource dataSource = configuration.ausRdsAuroraMySqlDataSource();
         Properties props = ((DriverManagerDataSource) dataSource).getConnectionProperties();
@@ -47,8 +37,8 @@ public class AusRdsAuroraMySqlConfigurationLocalTest {
 
     @Test
     void testDataSourceWhenAuthTokenIsProvided() {
-        dbAuthToken = "someAuthToken";
-        when(configBase.getProps()).thenReturn(new Properties());
+        // Set dbAuthToken to some value
+        configuration.dbAuthToken = "someAuthToken";
 
         DataSource dataSource = configuration.ausRdsAuroraMySqlDataSource();
         Properties props = ((DriverManagerDataSource) dataSource).getConnectionProperties();
@@ -57,14 +47,3 @@ public class AusRdsAuroraMySqlConfigurationLocalTest {
         assertThat(props.getProperty("password")).isEqualTo("someAuthToken");
     }
 }
-```
-
-### Explanation:
-
-1. **Mockito Setup**:
-    - We use `@InjectMocks` to create an instance of `AusRdsAuroraMySqlConfigurationLocal` and inject the mocks.
-    - We use `@Mock` to create a mock instance of `ConfigBase`.
-    - `MockitoAnnotations.openMocks(this)` initializes the mocks before each test.
-
-2. **Test Methods**:
-    - `testDataSource
