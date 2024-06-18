@@ -1,26 +1,46 @@
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockFilterConfig;
-import org.springframework.web.filter.Filter;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
 
-import net.jpmchase.pbcf.dashboardmgr.FilterConfig;
+import static org.mockito.Mockito.*;
 
-class FilterConfigTest {
+@ExtendWith(MockitoExtension.class)
+class SecurityConfigurationTest {
+
+    @Mock
+    private HttpSecurity httpSecurityMock;
+
+    private SecurityConfiguration securityConfiguration;
+
+    @BeforeEach
+    void setUp() {
+        securityConfiguration = new SecurityConfiguration();
+    }
 
     @Test
-    void testEmulationFilter() {
-        // Arrange
-        FilterConfig filterConfig = new FilterConfig();
-        MockFilterConfig mockFilterConfig = new MockFilterConfig();
+    void testFilterChain() throws Exception {
+        SecurityFilterChain filterChain = securityConfiguration.filterChain(httpSecurityMock);
 
-        // Act
-        Filter filter = filterConfig.emulationFilter().getFilter();
-        filter.init(mockFilterConfig);
+        verify(httpSecurityMock, times(1)).authorizeHttpRequests();
+        verify(httpSecurityMock, times(1)).anyRequest();
+        verify(httpSecurityMock, times(1)).permitAll();
+        verify(httpSecurityMock, times(1)).csrf();
+        verify(httpSecurityMock, times(1)).disable();
+        verify(httpSecurityMock, times(1)).build();
+    }
 
-        // Assert
-        assertNotNull(filter, "Filter should not be null");
-        assertEquals(1, filterConfig.emulationFilter().getOrder(), "Filter order should be 1");
+    @Test
+    void testWebSecurityCustomizer() throws Exception {
+        SecurityConfiguration.WebSecurityCustomizer customizer = securityConfiguration.webSecurityCustomizer();
+
+        WebSecurityCustomizer.WebSecurityCustomizerConfig config = mock(WebSecurityCustomizer.WebSecurityCustomizerConfig.class);
+        customizer.customize(config);
+
+        verify(config, times(1)).ignoring();
+        verify(config, times(1)).requestMatchers("/**");
     }
 }
