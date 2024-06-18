@@ -1,7 +1,6 @@
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockResourceResolver;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.resource.ResourceResolver;
+import org.springframework.web.servlet.resource.ResourceResolverChain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -24,8 +23,18 @@ class ApplicationConfigurationTest {
 
     @Test
     void testAddResourceHandlers() {
-        MockResourceResolver mockResourceResolver = new MockResourceResolver();
-        ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(mockResourceResolver.getResourceHandlerRegistry());
-        assertTrue(resolver instanceof MockResourceResolver.BrowserHistoryIndexResolver);
+        ResourceHandlerRegistry registry = new ResourceHandlerRegistry();
+        ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(registry);
+
+        assertTrue(resolver instanceof BrowserHistoryIndexResolver);
+
+        ResourceResolverChain chain = (ResourceResolverChain) registry.getHandlerInstances()
+                .stream()
+                .filter(instance -> instance instanceof ResourceResolverChain)
+                .findFirst()
+                .orElse(null);
+
+        assertNotNull(chain);
+        assertTrue(chain.getResolvers().contains(resolver));
     }
 }
