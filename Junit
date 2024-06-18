@@ -1,49 +1,72 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.sql.DataSource;
 import java.util.Properties;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.mockito.Mockito.*;
 
-public class AusRdsAuroraMySqlConfigurationLocalTest {
+@ExtendWith(MockitoExtension.class)
+class AwsRdsAuroraMySqlConfigurationLocalTest {
 
-    private AusRdsAuroraMySqlConfigurationLocal configuration;
+    private AwsRdsAuroraMySqlConfigurationLocal configurationLocal;
+
+    @Mock
+    private ConfigBase configBase;
 
     @BeforeEach
     void setUp() {
-        configuration = new AusRdsAuroraMySqlConfigurationLocal() {
-            @Override
-            protected Properties getProps() {
-                Properties props = new Properties();
-                // Set default properties if needed
-                return props;
-            }
-        };
+        configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal();
+        ReflectionTestUtils.setField(configurationLocal, "configBase", configBase);
     }
 
     @Test
-    void testDataSourceWhenAuthTokenIsNa() {
-        // Set dbAuthToken to "na"
-        configuration.dbAuthToken = "na";
+    void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() {
+        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
 
-        DataSource dataSource = configuration.ausRdsAuroraMySqlDataSource();
-        Properties props = ((DriverManagerDataSource) dataSource).getConnectionProperties();
+        DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
+        assertNotNull(dataSource);
 
-        assertThat(props.getProperty("PROP_AWS_IAM")).isEqualTo(Boolean.TRUE.toString());
-        assertThat(props.getProperty("password")).isNull();
+        Properties props = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
+        assertEquals("false", props.getProperty("PROP_AWS_IAM"));
+        assertEquals("testToken", props.getProperty("password"));
     }
 
     @Test
-    void testDataSourceWhenAuthTokenIsProvided() {
-        // Set dbAuthToken to some value
-        configuration.dbAuthToken = "someAuthToken";
+    void testAwsRdsAuroraMySqlDataSource_WithoutDbAuthToken() {
+        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
 
-        DataSource dataSource = configuration.ausRdsAuroraMySqlDataSource();
-        Properties props = ((DriverManagerDataSource) dataSource).getConnectionProperties();
+        DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
+        assertNotNull(dataSource);
 
-        assertThat(props.getProperty("PROP_AWS_IAM")).isEqualTo(Boolean.FALSE.toString());
-        assertThat(props.getProperty("password")).isEqualTo("someAuthToken");
+        Properties props = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
+        assertEquals("true", props.getProperty("PROP_AWS_IAM"));
+    }
+
+    @Test
+    void testGetPropsForLocal_WithDbAuthToken() {
+        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
+        when(configBase.getProps()).thenReturn(new Properties());
+
+        Properties props = configurationLocal.getPropsForLocal();
+        assertNotNull(props);
+        assertEquals("false", props.getProperty("PROP_AWS_IAM"));
+        assertEquals("testToken", props.getProperty("password"));
+    }
+
+    @Test
+    void testGetPropsForLocal_WithoutDbAuthToken() {
+        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
+        when(configBase.getProps()).thenReturn(new Properties());
+
+        Properties props = configurationLocal.getPropsForLocal();
+        assertNotNull(props);
+        assertEquals("true", props.getProperty("PROP_AWS_IAM"));
     }
 }
