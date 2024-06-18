@@ -1,42 +1,55 @@
-package net.jpmchase.poef.dashboardmgr.config;
-
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.junit.jupiter.api.TestInstance;
+import org.springframework.mock.web.MockServletContext;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders;
+import org.springframework.test.web.servlet.result.MockMvcResultMatchers;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.context.support.AnnotationConfigWebApplicationContext;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@SpringBootTest
-@ActiveProfiles("faws")
-@EnableWebSecurity
-public class SecurityConfigurationTest {
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class SecurityConfigurationTest {
 
-    @Autowired
-    private ApplicationContext applicationContext;
+    private MockMvc mockMvc;
+    private SecurityConfiguration securityConfiguration;
 
-    @Autowired
-    private SecurityFilterChain securityFilterChain;
+    @BeforeAll
+    void setup() {
+        securityConfiguration = new SecurityConfiguration();
+        AnnotationConfigWebApplicationContext context = new AnnotationConfigWebApplicationContext();
+        context.setServletContext(new MockServletContext());
+        context.register(SecurityConfiguration.class);
+        context.refresh();
 
-    @Test
-    public void contextLoads() {
-        assertThat(applicationContext).isNotNull();
-        assertThat(securityFilterChain).isNotNull();
+        SecurityFilterChain filterChain = context.getBean(SecurityFilterChain.class);
+        assertNotNull(filterChain);
+
+        this.mockMvc = MockMvcBuilders.webAppContextSetup(context).addFilters(filterChain).build();
     }
 
     @Test
-    public void filterChain_permitAll() throws Exception {
-        HttpSecurity httpSecurity = applicationContext.getBean(HttpSecurity.class);
-        SecurityFilterChain chain = new SecurityConfiguration().filterChain(httpSecurity);
-        
-        httpSecurity.authorizeHttpRequests(auth -> {
-            assertThat(auth.getRegistry().anyRequest().permitAll()).isNotNull();
-        });
-        
-        assertThat(chain).isNotNull();
+    void testPublicEndpointsAreAccessible() throws Exception {
+        mockMvc.perform(MockMvcRequestBuilders.get("/"))
+                .andExpect(MockMvcResultMatchers.status().isOk());
+    }
+
+    @Test
+    void testFilterChainBean() throws Exception {
+        SecurityFilterChain filterChain = securityConfiguration.filterChain(HttpSecurity.http());
+        assertNotNull(filterChain);
+    }
+
+    @Test
+    void testWebSecurityCustomizerBean() throws Exception {
+        WebSecurityCustomizer webSecurityCustomizer = securityConfiguration.webSecurityCustomizer();
+        assertNotNull(webSecurityCustomizer);
+
+        Object ignoreRequestMatchers = ReflectionTestUtils.invokeMethod(webSecurityCustomizer, "ignoring");
+        assertNotNull(ignoreRequestMatchers);
     }
 }
