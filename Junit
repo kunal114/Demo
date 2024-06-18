@@ -1,6 +1,7 @@
 import org.junit.jupiter.api.Test;
 import org.springframework.web.servlet.resource.ResourceResolver;
-import org.springframework.web.servlet.resource.ResourceResolverChain;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -11,7 +12,7 @@ class ApplicationConfigurationTest {
 
     @Test
     void testResourceLocations() {
-        String[] resourceLocations = (String[]) ReflectionTestUtils.getStaticFieldValue(ApplicationConfiguration.class, "RESOURCE_LOCATIONS");
+        String[] resourceLocations = ApplicationConfiguration.RESOURCE_LOCATIONS;
         assertEquals(6, resourceLocations.length);
         assertEquals("classpath:/META-INF/resources/", resourceLocations[0]);
         assertEquals("classpath:/resources/", resourceLocations[1]);
@@ -28,13 +29,7 @@ class ApplicationConfigurationTest {
 
         assertTrue(resolver instanceof BrowserHistoryIndexResolver);
 
-        ResourceResolverChain chain = (ResourceResolverChain) registry.getHandlerInstances()
-                .stream()
-                .filter(instance -> instance instanceof ResourceResolverChain)
-                .findFirst()
-                .orElse(null);
-
-        assertNotNull(chain);
-        assertTrue(chain.getResolvers().contains(resolver));
+        List<ResourceResolver> resolvers = registry.getResolvers();
+        assertTrue(resolvers.contains(resolver));
     }
 }
