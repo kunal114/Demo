@@ -1,82 +1,26 @@
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Nested;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
-
-import javax.sql.DataSource;
-import java.util.Properties;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-@ExtendWith(MockitoExtension.class)
-class AwsRdsAuroraMySqlConfigurationLocalTest {
+import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockFilterConfig;
+import org.springframework.web.filter.Filter;
 
-    private AwsRdsAuroraMySqlConfigurationLocal configurationLocal;
+import net.jpmchase.pbcf.dashboardmgr.FilterConfig;
 
-    @Mock
-    private ConfigBase configBase;
-
-    @BeforeEach
-    void setUp() {
-        configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal();
-        ReflectionTestUtils.setField(configurationLocal, "configBase", configBase);
-    }
+class FilterConfigTest {
 
     @Test
-    void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() {
-        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
-        Properties props = new Properties();
-        when(configBase.getProps()).thenReturn(props);
+    void testEmulationFilter() {
+        // Arrange
+        FilterConfig filterConfig = new FilterConfig();
+        MockFilterConfig mockFilterConfig = new MockFilterConfig();
 
-        DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
-        assertNotNull(dataSource);
+        // Act
+        Filter filter = filterConfig.emulationFilter().getFilter();
+        filter.init(mockFilterConfig);
 
-        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertEquals("false", connectionProps.getProperty("PROP_AWS_IAM"));
-        assertEquals("testToken", connectionProps.getProperty("password"));
-    }
-
-    @Test
-    void testAwsRdsAuroraMySqlDataSource_WithoutDbAuthToken() {
-        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
-        Properties props = new Properties();
-        when(configBase.getProps()).thenReturn(props);
-
-        DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
-        assertNotNull(dataSource);
-
-        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertEquals("true", connectionProps.getProperty("PROP_AWS_IAM"));
-    }
-
-    @Nested
-    class GetPropsForLocalTests {
-        @Test
-        void testGetPropsForLocal_WithDbAuthToken() {
-            ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
-            Properties props = new Properties();
-            when(configBase.getProps()).thenReturn(props);
-
-            Properties returnedProps = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
-            assertNotNull(returnedProps);
-            assertEquals("false", returnedProps.getProperty("PROP_AWS_IAM"));
-            assertEquals("testToken", returnedProps.getProperty("password"));
-        }
-
-        @Test
-        void testGetPropsForLocal_WithoutDbAuthToken() {
-            ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
-            Properties props = new Properties();
-            when(configBase.getProps()).thenReturn(props);
-
-            Properties returnedProps = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
-            assertNotNull(returnedProps);
-            assertEquals("true", returnedProps.getProperty("PROP_AWS_IAM"));
-        }
+        // Assert
+        assertNotNull(filter, "Filter should not be null");
+        assertEquals(1, filterConfig.emulationFilter().getOrder(), "Filter order should be 1");
     }
 }
