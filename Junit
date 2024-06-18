@@ -1,42 +1,31 @@
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.mock.web.MockResourceResolver;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.servlet.resource.ResourceResolver;
-import org.springframework.web.servlet.resource.ResourceResolverChain;
 
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@ExtendWith(MockitoExtension.class)
 class ApplicationConfigurationTest {
 
-    @Mock
-    private ResourceHandlerRegistry resourceHandlerRegistry;
+    private final ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer = new ApplicationConfiguration.BrowserHistoryConfigurer();
 
-    @Mock
-    private ResourceResolver resourceResolver;
-
-    @InjectMocks
-    private ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer;
+    @Test
+    void testResourceLocations() {
+        String[] resourceLocations = (String[]) ReflectionTestUtils.getStaticFieldValue(ApplicationConfiguration.class, "RESOURCE_LOCATIONS");
+        assertEquals(6, resourceLocations.length);
+        assertEquals("classpath:/META-INF/resources/", resourceLocations[0]);
+        assertEquals("classpath:/resources/", resourceLocations[1]);
+        assertEquals("classpath:/static/", resourceLocations[2]);
+        assertEquals("classpath:/public/", resourceLocations[3]);
+        assertEquals("classpath:/", resourceLocations[4]);
+        assertEquals("classpath:/***", resourceLocations[5]);
+    }
 
     @Test
     void testAddResourceHandlers() {
-        ResourceResolverChain resourceResolverChain = mock(ResourceResolverChain.class);
-        when(resourceHandlerRegistry.addResourceLocations(ApplicationConfiguration.RESOURCE_LOCATIONS))
-                .thenReturn(resourceHandlerRegistry);
-        when(resourceHandlerRegistry.setCachePeriod(30))
-                .thenReturn(resourceHandlerRegistry);
-        when(resourceHandlerRegistry.resourceChain(true))
-                .thenReturn(resourceResolverChain);
-        when(resourceResolverChain.addResolver(any(ResourceResolver.class)))
-                .thenReturn(resourceResolverChain);
-
-        browserHistoryConfigurer.addResourceHandlers(resourceHandlerRegistry);
-
-        verify(resourceHandlerRegistry).addResourceLocations(ApplicationConfiguration.RESOURCE_LOCATIONS);
-        verify(resourceHandlerRegistry).setCachePeriod(30);
-        verify(resourceHandlerRegistry).resourceChain(true);
-        verify(resourceResolverChain).addResolver(any(ResourceResolver.class));
+        MockResourceResolver mockResourceResolver = new MockResourceResolver();
+        ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(mockResourceResolver.getResourceHandlerRegistry());
+        assertTrue(resolver instanceof MockResourceResolver.BrowserHistoryIndexResolver);
     }
 }
