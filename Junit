@@ -29,6 +29,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() {
         ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
+        when(configBase.getProps()).thenReturn(new Properties());
 
         DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
         assertNotNull(dataSource);
@@ -41,6 +42,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithoutDbAuthToken() {
         ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
+        when(configBase.getProps()).thenReturn(new Properties());
 
         DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
         assertNotNull(dataSource);
