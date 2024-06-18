@@ -70,4 +70,9 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
             ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
             when(configBase.getProps()).thenReturn(new Properties());
 
-            Properti
+            Properties props = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
+            assertNotNull(props);
+            assertEquals("true", props.getProperty("PROP_AWS_IAM"));
+        }
+    }
+}
