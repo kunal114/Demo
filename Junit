@@ -11,23 +11,27 @@ import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class AwsRdsAuroraMySqlConfigurationLocalTest {
 
     private AwsRdsAuroraMySqlConfigurationLocal configurationLocal;
 
+    @Mock
+    private ConfigBase configBase;
+
     @BeforeEach
     void setUp() {
         configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal();
+        ReflectionTestUtils.setField(configurationLocal, "configBase", configBase);
     }
 
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() {
         ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
         Properties props = new Properties();
-        when(configurationLocal.getProps()).thenReturn(props);
+        when(configBase.getProps()).thenReturn(props);
 
         DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
         assertNotNull(dataSource);
@@ -41,7 +45,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
     void testAwsRdsAuroraMySqlDataSource_WithoutDbAuthToken() {
         ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
         Properties props = new Properties();
-        when(configurationLocal.getProps()).thenReturn(props);
+        when(configBase.getProps()).thenReturn(props);
 
         DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
         assertNotNull(dataSource);
@@ -56,7 +60,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
         void testGetPropsForLocal_WithDbAuthToken() {
             ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
             Properties props = new Properties();
-            when(configurationLocal.getProps()).thenReturn(props);
+            when(configBase.getProps()).thenReturn(props);
 
             Properties returnedProps = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
             assertNotNull(returnedProps);
@@ -68,7 +72,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
         void testGetPropsForLocal_WithoutDbAuthToken() {
             ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
             Properties props = new Properties();
-            when(configurationLocal.getProps()).thenReturn(props);
+            when(configBase.getProps()).thenReturn(props);
 
             Properties returnedProps = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
             assertNotNull(returnedProps);
