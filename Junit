@@ -1,4 +1,5 @@
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -48,24 +49,27 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
         assertEquals("true", props.getProperty("PROP_AWS_IAM"));
     }
 
-    @Test
-    void testGetPropsForLocal_WithDbAuthToken() {
-        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
-        when(configBase.getProps()).thenReturn(new Properties());
+    @Nested
+    class GetPropsForLocalTests {
+        @Test
+        void testGetPropsForLocal_WithDbAuthToken() {
+            ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
+            when(configBase.getProps()).thenReturn(new Properties());
 
-        Properties props = configurationLocal.getPropsForLocal();
-        assertNotNull(props);
-        assertEquals("false", props.getProperty("PROP_AWS_IAM"));
-        assertEquals("testToken", props.getProperty("password"));
-    }
+            Properties props = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
+            assertNotNull(props);
+            assertEquals("false", props.getProperty("PROP_AWS_IAM"));
+            assertEquals("testToken", props.getProperty("password"));
+        }
 
-    @Test
-    void testGetPropsForLocal_WithoutDbAuthToken() {
-        ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
-        when(configBase.getProps()).thenReturn(new Properties());
+        @Test
+        void testGetPropsForLocal_WithoutDbAuthToken() {
+            ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
+            when(configBase.getProps()).thenReturn(new Properties());
 
-        Properties props = configurationLocal.getPropsForLocal();
-        assertNotNull(props);
-        assertEquals("true", props.getProperty("PROP_AWS_IAM"));
+            Properties props = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
+            assertNotNull(props);
+            assertEquals("true", props.getProperty("PROP_AWS_IAM"));
+        }
     }
 }
