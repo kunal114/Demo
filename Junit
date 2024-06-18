@@ -58,7 +58,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
             Properties props = new Properties();
             when(configurationLocal.getProps()).thenReturn(props);
 
-            Properties returnedProps = configurationLocal.getPropsForLocal();
+            Properties returnedProps = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
             assertNotNull(returnedProps);
             assertEquals("false", returnedProps.getProperty("PROP_AWS_IAM"));
             assertEquals("testToken", returnedProps.getProperty("password"));
@@ -70,7 +70,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
             Properties props = new Properties();
             when(configurationLocal.getProps()).thenReturn(props);
 
-            Properties returnedProps = configurationLocal.getPropsForLocal();
+            Properties returnedProps = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
             assertNotNull(returnedProps);
             assertEquals("true", returnedProps.getProperty("PROP_AWS_IAM"));
         }
