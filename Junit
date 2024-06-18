@@ -23,7 +23,8 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
 
     @BeforeEach
     void setUp() {
-        configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal(configBase);
+        configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal();
+        ReflectionTestUtils.setField(configurationLocal, "configBase", configBase);
     }
 
     @Test
@@ -69,9 +70,4 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
             ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
             when(configBase.getProps()).thenReturn(new Properties());
 
-            Properties props = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
-            assertNotNull(props);
-            assertEquals("true", props.getProperty("PROP_AWS_IAM"));
-        }
-    }
-}
+            Properti
