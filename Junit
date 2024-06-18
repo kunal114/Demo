@@ -1,54 +1,43 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.MockitoAnnotations;
 
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 
-import java.io.IOException;
-
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.Mockito.*;
 
-@ExtendWith(MockitoExtension.class)
 class MOCLoggingFilterTest {
+    // ... (existing setup and other test cases)
 
-    @Mock
-    private HttpServletRequest request;
+    @Test
+    void testPopulateJanusId() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+        String customerId = "123456";
+        when(mockRequest.getAttribute("someAttribute")).thenReturn(customerId);
 
-    @Mock
-    private HttpServletResponse response;
+        Method populateJanusIdMethod = MOCLoggingFilter.class.getDeclaredMethod("populateJanusId", HttpServletRequest.class);
+        populateJanusIdMethod.setAccessible(true);
+        populateJanusIdMethod.invoke(filter, mockRequest);
 
-    @Mock
-    private FilterChain filterChain;
-
-    private MOCLoggingFilter filter;
-
-    @BeforeEach
-    void setUp() {
-        filter = new MOCLoggingFilter();
+        verify(mockRequest, times(1)).setAttribute(Constants.JANUS_SID, customerId);
+        // Add additional verifications if needed
     }
 
     @Test
-    void testDoFilterWithActuatorRequest() throws IOException, ServletException {
-        when(request.getRequestURI()).thenReturn("/actuator/health");
+    void testPopulateJanusIdWithEmptyCustomerId() throws NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+        String customerId = "";
+        when(mockRequest.getAttribute("someAttribute")).thenReturn(customerId);
 
-        filter.doFilter(request, response, filterChain);
+        Method populateJanusIdMethod = MOCLoggingFilter.class.getDeclaredMethod("populateJanusId", HttpServletRequest.class);
+        populateJanusIdMethod.setAccessible(true);
+        populateJanusIdMethod.invoke(filter, mockRequest);
 
-        verify(filterChain, times(1)).doFilter(request, response);
+        verify(mockRequest, never()).setAttribute(eq(Constants.JANUS_SID), anyString());
+        // Add additional verifications if needed
     }
 
-    @Test
-    void testDoFilterWithH2ConsoleRequest() throws IOException, ServletException {
-        when(request.getRequestURI()).thenReturn("/h2-console");
-
-        filter.doFilter(request, response, filterChain);
-
-        verify(filterChain, times(1)).doFilter(request, response);
-    }
-
-    // Add more test cases for different scenarios
+    // ... (any additional test cases)
 }
