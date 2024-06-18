@@ -1,12 +1,26 @@
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 import org.springframework.web.servlet.resource.ResourceResolver;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
 class ApplicationConfigurationTest {
+
+    @Mock
+    private ResourceHandlerRegistry resourceHandlerRegistry;
+
+    private final ApplicationConfiguration configuration = new ApplicationConfiguration();
+    private final ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer = configuration.new BrowserHistoryConfigurer();
+
+    public ApplicationConfigurationTest() {
+        MockitoAnnotations.openMocks(this);
+    }
 
     @Test
     void testResourceLocations() {
@@ -22,15 +36,12 @@ class ApplicationConfigurationTest {
 
     @Test
     void testAddResourceHandlers() {
-        ApplicationConfiguration configuration = new ApplicationConfiguration();
-        ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer = configuration.new BrowserHistoryConfigurer();
+        List<ResourceResolver> resolvers = new ArrayList<>();
+        when(resourceHandlerRegistry.getResolvers()).thenReturn(resolvers);
 
-        ResourceHandlerRegistry registry = new ResourceHandlerRegistry();
-        ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(registry);
+        ResourceResolver resolver = browserHistoryConfigurer.addResourceHandlers(resourceHandlerRegistry);
 
         assertTrue(resolver instanceof BrowserHistoryIndexResolver);
-
-        List<ResourceResolver> resolvers = registry.getResolvers();
         assertTrue(resolvers.contains(resolver));
     }
 }
