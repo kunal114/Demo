@@ -1,45 +1,39 @@
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
+import java.util.Collections;
+import java.util.List;
 
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class YourFilterTest {
+class YourControllerTest {
 
     @Mock
-    private HttpServletRequest request;
+    private CoverageService coverageService;
 
-    @Mock
-    private HttpServletResponse response;
-
-    @Mock
-    private FilterChain filterChain;
-
-    private YourFilter yourFilter;
-
-    @BeforeEach
-    void setUp() {
-        yourFilter = new YourFilter();
-    }
+    @InjectMocks
+    private YourController yourController;
 
     @Test
-    void testDoFilter() throws ServletException, IOException {
-        // Arrange
-        when(request.getRequestURI()).thenReturn("/test");
+    void testGetAllClientsException() {
+        String janusUserId = "user123";
+        JANUS_SID sid = new JANUS_SID();
 
-        // Act
-        yourFilter.doFilter(request, response, filterChain);
+        // Mock the exception
+        when(coverageService.getAllClients(sid, janusUserId)).thenThrow(new NTTFResponseException());
 
-        // Assert
-        verify(filterChain).doFilter(any(MutableHttpServletRequest.class), eq(response));
-        // Add more assertions to verify the modified headers, if needed
+        // Call the method being tested
+        ResponseEntity<List<EntityInfo>> response = yourController.getAllClients(null, janusUserId, sid);
+
+        // Assert the response
+        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
+        assertEquals(Collections.emptyList(), response.getBody());
     }
 }
