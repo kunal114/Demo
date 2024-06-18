@@ -18,38 +18,36 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
 
     private AwsRdsAuroraMySqlConfigurationLocal configurationLocal;
 
-    @Mock
-    private ConfigBase configBase;
-
     @BeforeEach
     void setUp() {
         configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal();
-        ReflectionTestUtils.setField(configurationLocal, "configBase", configBase);
     }
 
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() {
         ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
-        when(configBase.getProps()).thenReturn(new Properties());
+        Properties props = new Properties();
+        when(configurationLocal.getProps()).thenReturn(props);
 
         DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
         assertNotNull(dataSource);
 
-        Properties props = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertEquals("false", props.getProperty("PROP_AWS_IAM"));
-        assertEquals("testToken", props.getProperty("password"));
+        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
+        assertEquals("false", connectionProps.getProperty("PROP_AWS_IAM"));
+        assertEquals("testToken", connectionProps.getProperty("password"));
     }
 
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithoutDbAuthToken() {
         ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
-        when(configBase.getProps()).thenReturn(new Properties());
+        Properties props = new Properties();
+        when(configurationLocal.getProps()).thenReturn(props);
 
         DataSource dataSource = configurationLocal.awsRdsAuroraMySqlDataSource();
         assertNotNull(dataSource);
 
-        Properties props = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertEquals("true", props.getProperty("PROP_AWS_IAM"));
+        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
+        assertEquals("true", connectionProps.getProperty("PROP_AWS_IAM"));
     }
 
     @Nested
@@ -57,22 +55,24 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
         @Test
         void testGetPropsForLocal_WithDbAuthToken() {
             ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "testToken");
-            when(configBase.getProps()).thenReturn(new Properties());
+            Properties props = new Properties();
+            when(configurationLocal.getProps()).thenReturn(props);
 
-            Properties props = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
-            assertNotNull(props);
-            assertEquals("false", props.getProperty("PROP_AWS_IAM"));
-            assertEquals("testToken", props.getProperty("password"));
+            Properties returnedProps = configurationLocal.getPropsForLocal();
+            assertNotNull(returnedProps);
+            assertEquals("false", returnedProps.getProperty("PROP_AWS_IAM"));
+            assertEquals("testToken", returnedProps.getProperty("password"));
         }
 
         @Test
         void testGetPropsForLocal_WithoutDbAuthToken() {
             ReflectionTestUtils.setField(configurationLocal, "dbAuthToken", "na");
-            when(configBase.getProps()).thenReturn(new Properties());
+            Properties props = new Properties();
+            when(configurationLocal.getProps()).thenReturn(props);
 
-            Properties props = ReflectionTestUtils.invokeMethod(configurationLocal, "getPropsForLocal");
-            assertNotNull(props);
-            assertEquals("true", props.getProperty("PROP_AWS_IAM"));
+            Properties returnedProps = configurationLocal.getPropsForLocal();
+            assertNotNull(returnedProps);
+            assertEquals("true", returnedProps.getProperty("PROP_AWS_IAM"));
         }
     }
 }
