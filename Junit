@@ -3,37 +3,40 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import org.springframework.web.servlet.resource.ResourceResolver;
+import org.springframework.web.servlet.resource.ResourceResolverChain;
 
-import java.util.Collections;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class YourControllerTest {
+class ApplicationConfigurationTest {
 
     @Mock
-    private CoverageService coverageService;
+    private ResourceHandlerRegistry resourceHandlerRegistry;
+
+    @Mock
+    private ResourceResolver resourceResolver;
 
     @InjectMocks
-    private YourController yourController;
+    private ApplicationConfiguration.BrowserHistoryConfigurer browserHistoryConfigurer;
 
     @Test
-    void testGetAllClientsException() {
-        String janusUserId = "user123";
-        JANUS_SID sid = new JANUS_SID();
+    void testAddResourceHandlers() {
+        ResourceResolverChain resourceResolverChain = mock(ResourceResolverChain.class);
+        when(resourceHandlerRegistry.addResourceLocations(ApplicationConfiguration.RESOURCE_LOCATIONS))
+                .thenReturn(resourceHandlerRegistry);
+        when(resourceHandlerRegistry.setCachePeriod(30))
+                .thenReturn(resourceHandlerRegistry);
+        when(resourceHandlerRegistry.resourceChain(true))
+                .thenReturn(resourceResolverChain);
+        when(resourceResolverChain.addResolver(any(ResourceResolver.class)))
+                .thenReturn(resourceResolverChain);
 
-        // Mock the exception
-        when(coverageService.getAllClients(sid, janusUserId)).thenThrow(new NTTFResponseException());
+        browserHistoryConfigurer.addResourceHandlers(resourceHandlerRegistry);
 
-        // Call the method being tested
-        ResponseEntity<List<EntityInfo>> response = yourController.getAllClients(null, janusUserId, sid);
-
-        // Assert the response
-        assertEquals(HttpStatus.INTERNAL_SERVER_ERROR, response.getStatusCode());
-        assertEquals(Collections.emptyList(), response.getBody());
+        verify(resourceHandlerRegistry).addResourceLocations(ApplicationConfiguration.RESOURCE_LOCATIONS);
+        verify(resourceHandlerRegistry).setCachePeriod(30);
+        verify(resourceHandlerRegistry).resourceChain(true);
+        verify(resourceResolverChain).addResolver(any(ResourceResolver.class));
     }
 }
