@@ -22,8 +22,7 @@ class AwsRdsAuroraMySqlConfigurationLocalTest {
 
     @BeforeEach
     void setUp() {
-        configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal();
-        ReflectionTestUtils.setField(configurationLocal, "configBase", configBase);
+        configurationLocal = new AwsRdsAuroraMySqlConfigurationLocal(configBase);
     }
 
     @Test
