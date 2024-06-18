@@ -1,46 +1,47 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-
+import javax.servlet.http.HttpServletRequest;
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-@ExtendWith(MockitoExtension.class)
-class SecurityConfigurationTest {
+class MutableHttpServletRequestTest {
 
-    @Mock
-    private HttpSecurity httpSecurityMock;
-
-    private SecurityConfiguration securityConfiguration;
+    private HttpServletRequest mockRequest;
+    private MutableHttpServletRequest mutableRequest;
 
     @BeforeEach
     void setUp() {
-        securityConfiguration = new SecurityConfiguration();
+        mockRequest = mock(HttpServletRequest.class);
+        mutableRequest = new MutableHttpServletRequest(mockRequest);
     }
 
     @Test
-    void testFilterChain() throws Exception {
-        SecurityFilterChain filterChain = securityConfiguration.filterChain(httpSecurityMock);
+    void testPutHeader() {
+        String headerName = "X-Custom-Header";
+        String headerValue = "CustomValue";
 
-        verify(httpSecurityMock, times(1)).authorizeHttpRequests();
-        verify(httpSecurityMock, times(1)).anyRequest();
-        verify(httpSecurityMock, times(1)).permitAll();
-        verify(httpSecurityMock, times(1)).csrf();
-        verify(httpSecurityMock, times(1)).disable();
-        verify(httpSecurityMock, times(1)).build();
+        mutableRequest.putHeader(headerName, headerValue);
+        assertEquals(headerValue, mutableRequest.getHeader(headerName));
     }
 
     @Test
-    void testWebSecurityCustomizer() throws Exception {
-        SecurityConfiguration.WebSecurityCustomizer customizer = securityConfiguration.webSecurityCustomizer();
+    void testGetHeaderFromWrappedRequest() {
+        String headerName = "X-Original-Header";
+        String headerValue = "OriginalValue";
 
-        WebSecurityCustomizer.WebSecurityCustomizerConfig config = mock(WebSecurityCustomizer.WebSecurityCustomizerConfig.class);
-        customizer.customize(config);
+        when(mockRequest.getHeader(headerName)).thenReturn(headerValue);
+        assertEquals(headerValue, mutableRequest.getHeader(headerName));
+    }
 
-        verify(config, times(1)).ignoring();
-        verify(config, times(1)).requestMatchers("/**");
+    @Test
+    void testGetHeaderCustomOverwritesOriginal() {
+        String headerName = "X-Common-Header";
+        String originalValue = "OriginalValue";
+        String customValue = "CustomValue";
+
+        when(mockRequest.getHeader(headerName)).thenReturn(originalValue);
+
+        mutableRequest.putHeader(headerName, customValue);
+        assertEquals(customValue, mutableRequest.getHeader(headerName));
     }
 }
