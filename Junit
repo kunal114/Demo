@@ -1,105 +1,42 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
+import feign.RequestTemplate;
 
-import javax.servlet.http.HttpServletRequest;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-class MutableHttpServletRequestTest {
+class FeignInterceptorTest {
 
-    private HttpServletRequest mockRequest;
-    private MutableHttpServletRequest mutableRequest;
+    private FeignInterceptor interceptor;
+    private RequestTemplate template;
 
     @BeforeEach
     void setUp() {
-        mockRequest = mock(HttpServletRequest.class);
-        mutableRequest = new MutableHttpServletRequest(mockRequest);
+        interceptor = new FeignInterceptor();
+        template = mock(RequestTemplate.class);
     }
 
     @Test
-    void testPutHeader() {
-        String headerName = "X-Custom-Header";
-        String headerValue = "CustomValue";
+    void testApply() {
+        // Given
+        UUID mockUUID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+        String url = "http://example.com/api";
 
-        mutableRequest.putHeader(headerName, headerValue);
-        assertEquals(headerValue, mutableRequest.getHeader(headerName));
-    }
+        try (MockedStatic<UUID> mockedUUID = Mockito.mockStatic(UUID.class)) {
+            mockedUUID.when(UUID::randomUUID).thenReturn(mockUUID);
 
-    @Test
-    void testGetHeaderFromWrappedRequest() {
-        String headerName = "X-Original-Header";
-        String headerValue = "OriginalValue";
+            when(template.url()).thenReturn(url);
 
-        when(mockRequest.getHeader(headerName)).thenReturn(headerValue);
-        assertEquals(headerValue, mutableRequest.getHeader(headerName));
-    }
+            // When
+            interceptor.apply(template);
 
-    @Test
-    void testGetHeaderCustomOverwritesOriginal() {
-        String headerName = "X-Common-Header";
-        String originalValue = "OriginalValue";
-        String customValue = "CustomValue";
-
-        when(mockRequest.getHeader(headerName)).thenReturn(originalValue);
-
-        mutableRequest.putHeader(headerName, customValue);
-        assertEquals(customValue, mutableRequest.getHeader(headerName));
-    }
-
-    @Test
-    void testGetHeaderNames() {
-        // Custom headers
-        mutableRequest.putHeader("X-Custom-Header1", "CustomValue1");
-        mutableRequest.putHeader("X-Custom-Header2", "CustomValue2");
-
-        // Mocking original request headers
-        Set<String> originalHeaderNames = new HashSet<>();
-        originalHeaderNames.add("X-Original-Header1");
-        originalHeaderNames.add("X-Original-Header2");
-
-        when(mockRequest.getHeaderNames()).thenReturn(Collections.enumeration(originalHeaderNames));
-
-        Enumeration<String> headerNames = mutableRequest.getHeaderNames();
-
-        Set<String> headerNamesSet = new HashSet<>();
-        while (headerNames.hasMoreElements()) {
-            headerNamesSet.add(headerNames.nextElement());
+            // Then
+            verify(template).header("uuid", mockUUID.toString());
+            verify(template).url();
         }
-
-        assertTrue(headerNamesSet.contains("X-Custom-Header1"));
-        assertTrue(headerNamesSet.contains("X-Custom-Header2"));
-        assertTrue(headerNamesSet.contains("X-Original-Header1"));
-        assertTrue(headerNamesSet.contains("X-Original-Header2"));
-    }
-
-    @Test
-    void testGetHeaders() {
-        String headerName = "X-Custom-Header";
-        String customHeaderValue = "CustomValue";
-        mutableRequest.putHeader(headerName, customHeaderValue);
-
-        Set<String> originalHeaderValues = new HashSet<>();
-        originalHeaderValues.add("OriginalValue1");
-        originalHeaderValues.add("OriginalValue2");
-
-        when(mockRequest.getHeaders(headerName)).thenReturn(Collections.enumeration(originalHeaderValues));
-
-        Enumeration<String> headerValues = mutableRequest.getHeaders(headerName);
-
-        Set<String> headerValuesSet = new HashSet<>();
-        while (headerValues.hasMoreElements()) {
-            headerValuesSet.add(headerValues.nextElement());
-        }
-
-        assertTrue(headerValuesSet.contains("CustomValue"));
-        assertTrue(headerValuesSet.contains("OriginalValue1"));
-        assertTrue(headerValuesSet.contains("OriginalValue2"));
     }
 }
