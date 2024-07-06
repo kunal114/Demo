@@ -1,44 +1,101 @@
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import feign.RequestTemplate;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Properties;
 
-class FeignInterceptorTest {
+@Configuration
+public class DataSourceConfig {
 
-    private FeignInterceptor interceptor;
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataSourceConfig.class);
 
-    @Mock
-    private RequestTemplate requestTemplate;
-
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        interceptor = new FeignInterceptor();
+    @Bean
+    public DataSource awsRdsAuroraMySqlDataSource(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
+        try {
+            final var props = getPropsForLocal(epvConfigVSI, awsRdsDbPasswordFetch);
+            LOGGER.info("Data Base type Lookup for datasource started");
+            DriverManagerDataSource ds = getDataSource();
+            ds.setConnectionProperties(props);
+            return new TokenRefreshingDataSource(ds, new AWSTokenProvider(epvConfigVSI, awsRdsDbPasswordFetch));
+        } catch (Throwable t) {
+            LOGGER.error("Password Expired! (", t);
+        }
+        return null;
     }
 
-    @Test
-    void testApply() {
-        // Given
-        when(requestTemplate.url()).thenReturn("http://example.com/api");
+    private Properties getPropsForLocal(EPVConfigVSI epvConfigVSI, AwsRdsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
+        var props = getProps();
+        if (dbAuthToken != null && dbAuthToken.equalsIgnoreCase("na")) {
+            props.setProperty(PROP_AWS_IAM, Boolean.TRUE.toString());
+        } else {
+            props.setProperty(PROP_AWS_IAM, Boolean.FALSE.toString());
+            dbAuthToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
+            props.setProperty("password", dbAuthToken);
+        }
+        return props;
+    }
 
-        // When
-        interceptor.apply(requestTemplate);
+    private String getToken(EPVConfigVSI epvConfigVSI, AwsRdsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
+        String fidpss = epvConfigVSI.retrieveEpvPasswordForAwsRds();
+        return awsRdsDbPasswordFetch.getAuthToken(domain, servername, port, username, fid, fidpss, region, awsaccount, role, onprem, true);
+    }
 
-        // Then
-        verify(requestTemplate).header(eq("uuid"), anyString());
-        verify(requestTemplate).url();
+    private DriverManagerDataSource getDataSource() {
+        // Implement this method to return a configured DriverManagerDataSource
+        // This method was not provided in the original code
+    }
 
-        // Capture the UUID argument
-        var uuidCaptor = ArgumentCaptor.forClass(String.class);
-        verify(requestTemplate).header(eq("uuid"), uuidCaptor.capture());
+    private Properties getProps() {
+        // Implement this method to return the initial Properties
+        // This method was not provided in the original code
+    }
 
-        // Assert that the UUID is valid
-        String capturedUuid = uuidCaptor.getValue();
-        assertNotNull(capturedUuid);
-        assertTrue(capturedUuid.matches("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"));
+    private static class TokenRefreshingDataSource implements DataSource {
+        private final DriverManagerDataSource delegate;
+        private final AWSTokenProvider tokenProvider;
+
+        public TokenRefreshingDataSource(DriverManagerDataSource delegate, AWSTokenProvider tokenProvider) {
+            this.delegate = delegate;
+            this.tokenProvider = tokenProvider;
+        }
+
+        @Override
+        public Connection getConnection() throws SQLException {
+            return new TokenRefreshingConnection(delegate.getConnection(), tokenProvider);
+        }
+
+        @Override
+        public Connection getConnection(String username, String password) throws SQLException {
+            return new TokenRefreshingConnection(delegate.getConnection(username, password), tokenProvider);
+        }
+
+        // Implement other DataSource methods, delegating to the wrapped DataSource
+    }
+
+    private static class AWSTokenProvider implements TokenProvider {
+        private final EPVConfigVSI epvConfigVSI;
+        private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+
+        public AWSTokenProvider(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
+            this.epvConfigVSI = epvConfigVSI;
+            this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
+        }
+
+        @Override
+        public TokenInfo fetchToken() {
+            try {
+                String token = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
+                // Assume token is valid for 15 minutes (900000 milliseconds)
+                return new TokenInfo(token, 900000);
+            } catch (Exception e) {
+                LOGGER.error("Failed to fetch token", e);
+                throw new RuntimeException("Failed to fetch token", e);
+            }
+        }
     }
 }
