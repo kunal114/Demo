@@ -1,14 +1,3 @@
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.util.Properties;
-
 @Configuration
 public class DataSourceConfig {
 
@@ -21,80 +10,64 @@ public class DataSourceConfig {
             LOGGER.info("Data Base type Lookup for datasource started");
             DriverManagerDataSource ds = getDataSource();
             ds.setConnectionProperties(props);
-            return new TokenRefreshingDataSource(ds, new AWSTokenProvider(epvConfigVSI, awsRdsDbPasswordFetch));
+            return new TokenRefreshingDataSource(ds, epvConfigVSI, awsRdsDbPasswordFetch);
         } catch (Throwable t) {
-            LOGGER.error("Password Expired! (", t);
+            LOGGER.error("Error creating DataSource", t);
+            throw new RuntimeException("Failed to create DataSource", t);
         }
-        return null;
     }
 
-    private Properties getPropsForLocal(EPVConfigVSI epvConfigVSI, AwsRdsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        var props = getProps();
-        if (dbAuthToken != null && dbAuthToken.equalsIgnoreCase("na")) {
-            props.setProperty(PROP_AWS_IAM, Boolean.TRUE.toString());
-        } else {
-            props.setProperty(PROP_AWS_IAM, Boolean.FALSE.toString());
-            dbAuthToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
-            props.setProperty("password", dbAuthToken);
-        }
-        return props;
-    }
+    // ... other methods remain the same ...
 
-    private String getToken(EPVConfigVSI epvConfigVSI, AwsRdsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        String fidpss = epvConfigVSI.retrieveEpvPasswordForAwsRds();
-        return awsRdsDbPasswordFetch.getAuthToken(domain, servername, port, username, fid, fidpss, region, awsaccount, role, onprem, true);
-    }
+    private class TokenRefreshingDataSource extends DriverManagerDataSource {
+        private final EPVConfigVSI epvConfigVSI;
+        private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+        private volatile long lastRefreshTime;
+        private final Object lock = new Object();
 
-    private DriverManagerDataSource getDataSource() {
-        // Implement this method to return a configured DriverManagerDataSource
-        // This method was not provided in the original code
-    }
-
-    private Properties getProps() {
-        // Implement this method to return the initial Properties
-        // This method was not provided in the original code
-    }
-
-    private static class TokenRefreshingDataSource implements DataSource {
-        private final DriverManagerDataSource delegate;
-        private final AWSTokenProvider tokenProvider;
-
-        public TokenRefreshingDataSource(DriverManagerDataSource delegate, AWSTokenProvider tokenProvider) {
-            this.delegate = delegate;
-            this.tokenProvider = tokenProvider;
+        public TokenRefreshingDataSource(DriverManagerDataSource delegate, EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
+            super();
+            this.setUrl(delegate.getUrl());
+            this.setUsername(delegate.getUsername());
+            this.setPassword(delegate.getPassword());
+            this.setConnectionProperties(delegate.getConnectionProperties());
+            this.epvConfigVSI = epvConfigVSI;
+            this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
+            this.lastRefreshTime = System.currentTimeMillis();
         }
 
         @Override
         public Connection getConnection() throws SQLException {
-            return new TokenRefreshingConnection(delegate.getConnection(), tokenProvider);
+            refreshTokenIfNeeded();
+            return super.getConnection();
         }
 
         @Override
         public Connection getConnection(String username, String password) throws SQLException {
-            return new TokenRefreshingConnection(delegate.getConnection(username, password), tokenProvider);
+            refreshTokenIfNeeded();
+            return super.getConnection(username, password);
         }
 
-        // Implement other DataSource methods, delegating to the wrapped DataSource
-    }
-
-    private static class AWSTokenProvider implements TokenProvider {
-        private final EPVConfigVSI epvConfigVSI;
-        private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
-
-        public AWSTokenProvider(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
-            this.epvConfigVSI = epvConfigVSI;
-            this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
-        }
-
-        @Override
-        public TokenInfo fetchToken() {
-            try {
-                String token = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
-                // Assume token is valid for 15 minutes (900000 milliseconds)
-                return new TokenInfo(token, 900000);
-            } catch (Exception e) {
-                LOGGER.error("Failed to fetch token", e);
-                throw new RuntimeException("Failed to fetch token", e);
+        private void refreshTokenIfNeeded() throws SQLException {
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastRefreshTime > 840000) { // 14 minutes in milliseconds
+                synchronized (lock) {
+                    if (currentTime - lastRefreshTime > 840000) {  // Double-check
+                        try {
+                            String newToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
+                            this.setPassword(newToken);
+                            // Optionally, update connection properties if needed
+                            Properties props = getConnectionProperties();
+                            props.setProperty("password", newToken);
+                            setConnectionProperties(props);
+                            lastRefreshTime = currentTime;
+                            LOGGER.info("Token refreshed successfully");
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to refresh token", e);
+                            throw new SQLException("Failed to refresh database token", e);
+                        }
+                    }
+                }
             }
         }
     }
