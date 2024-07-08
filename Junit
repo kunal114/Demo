@@ -1,8 +1,7 @@
-To test the `refreshTokenIfNeeded` method within the `TokenRefreshingDataSource` class, we can utilize a combination of Mockito, ReflectionTestUtils, and time manipulation to ensure the method is invoked correctly and performs its intended actions.
-
-Here's an updated version of the test class, including a test for `refreshTokenIfNeeded`:
+To address the failure in refreshing the database token, we need to ensure that the mock setup and the context are correctly aligned. Here's an updated version of the test to ensure that all aspects, including the token refresh logic, are correctly handled.
 
 ```java
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -10,6 +9,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -18,15 +18,26 @@ import static org.mockito.Mockito.*;
 
 class DataSourceConfigTest {
 
+    private EPVConfigVSI epvConfigVSI;
+    private AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+    private DriverManagerDataSource delegate;
+    private DataSourceConfig.TokenRefreshingDataSource dataSource;
+
+    @BeforeEach
+    void setUp() {
+        epvConfigVSI = mock(EPVConfigVSI.class);
+        awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
+        delegate = mock(DriverManagerDataSource.class);
+        dataSource = new DataSourceConfig().new TokenRefreshingDataSource(delegate, epvConfigVSI, awsRdsDbPasswordFetch);
+    }
+
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() throws Exception {
         // Setup
-        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
-        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
-        DataSourceConfig config = new DataSourceConfig();
-
         when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn("token");
+
+        DataSourceConfig config = new DataSourceConfig();
 
         ReflectionTestUtils.setField(config, "dataSourceUrl", "testuri");
         ReflectionTestUtils.setField(config, "dataSourceUserName", "testuser");
@@ -46,12 +57,10 @@ class DataSourceConfigTest {
     @Test
     void testAwsRdsAuroraMySqlDataSource_WithDbAuthTokenne() throws Exception {
         // Setup
-        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
-        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
-        DataSourceConfig config = new DataSourceConfig();
-
         when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn(null);
+
+        DataSourceConfig config = new DataSourceConfig();
 
         ReflectionTestUtils.setField(config, "dataSourceUrl", "testuri");
         ReflectionTestUtils.setField(config, "dataSourceUserName", "testuser");
@@ -71,34 +80,40 @@ class DataSourceConfigTest {
     @Test
     void testTokenRefreshingDataSource_RefreshTokenIfNeeded() throws Exception {
         // Setup
-        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
-        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
-        DriverManagerDataSource delegate = mock(DriverManagerDataSource.class);
-        DataSourceConfig.TokenRefreshingDataSource dataSource =
-                new DataSourceConfig().new TokenRefreshingDataSource(delegate, epvConfigVSI, awsRdsDbPasswordFetch);
-
         when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
                 .thenReturn("newToken");
+
+        // Mocking getConnection from delegate to return a mock connection
+        Connection mockConnection = mock(Connection.class);
+        when(delegate.getConnection()).thenReturn(mockConnection);
 
         // Set last refresh time to a past time to force refresh
         ReflectionTestUtils.setField(dataSource, "lastRefreshTime", System.currentTimeMillis() - 900000); // 15 minutes ago
 
         // Action
-        dataSource.getConnection();
+        Connection connection = dataSource.getConnection();
 
         // Assert
+        assertNotNull(connection);
+        verify(delegate, times(1)).getConnection(); // Ensure that the delegate's getConnection was called
+
         Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
         assertEquals("newToken", connectionProps.getProperty("password"));
     }
 }
 ```
 
-**Explanation:**
+**Changes Made:**
 
-1. **Mocking and Setup**:
-   - Mock `EPVConfigVSI` and `AwardsDbPasswordFetch`.
-   - Use `Mockito.when` to return a new token when `getAuthToken` is called.
+1. **Setup Method**:
+   - Added a `@BeforeEach` setup method to initialize the mocks and the `TokenRefreshingDataSource`.
 
-2. **Testing `refreshTokenIfNeeded`**:
-   - Create an instance of `TokenRefreshingDataSource` using the mocked dependencies.
-   - Use `ReflectionTestUtils.setField`
+2. **Mock Connection**:
+   - Mocked the `Connection` object and configured the `delegate` data source to return this mock connection when `getConnection` is called.
+
+3. **Token Refresh Test**:
+   - Ensured that the `awsRdsDbPasswordFetch.getAuthToken` method returns a new token.
+   - Verified that the delegate's `getConnection` method was called.
+   - Checked that the `password` property in the `connectionProperties` was updated to the new token.
+
+This should address the token refresh functionality and ensure that the test covers the `refreshTokenIfNeeded` method correctly.
