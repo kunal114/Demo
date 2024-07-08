@@ -29,6 +29,7 @@ class TokenRefreshingDataSourceTest {
     void setUp() {
         MockitoAnnotations.openMocks(this);
 
+        // Mock behaviors of delegateDataSource
         when(delegateDataSource.getUrl()).thenReturn("jdbc:mysql://localhost/test");
         when(delegateDataSource.getUsername()).thenReturn("testuser");
         when(delegateDataSource.getPassword()).thenReturn("testpass");
@@ -36,6 +37,7 @@ class TokenRefreshingDataSourceTest {
         props.setProperty("password", "testpass");
         when(delegateDataSource.getConnectionProperties()).thenReturn(props);
 
+        // Initialize TokenRefreshingDataSource
         tokenRefreshingDataSource = new TokenRefreshingDataSource(delegateDataSource, epvConfigVSI, awsRdsDbPasswordFetch);
     }
 
@@ -54,19 +56,39 @@ class TokenRefreshingDataSourceTest {
     }
 
     @Test
-    void testRefreshTokenIfNeeded() throws Exception {
+    void testRefreshTokenIfNeeded_Success() throws Exception {
         // Simulate token refresh
         when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn("newToken");
 
-        // Act - Simulate the passage of time to trigger token refresh
+        // Set lastRefreshTime to trigger refresh
         long currentTime = System.currentTimeMillis();
         ReflectionTestUtils.setField(tokenRefreshingDataSource, "lastRefreshTime", currentTime - 850000);
+
+        // Act - Trigger token refresh
         tokenRefreshingDataSource.getConnection();
 
         // Assert
         verify(awsRdsDbPasswordFetch, times(1)).getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean());
+
+        // Verify connection properties are updated
         Properties props = tokenRefreshingDataSource.getConnectionProperties();
         assertEquals("newToken", props.getProperty("password"));
-        assertTrue(currentTime <= (Long) ReflectionTestUtils.getField(tokenRefreshingDataSource, "lastRefreshTime"));
+        assertTrue((Long) ReflectionTestUtils.getField(tokenRefreshingDataSource, "lastRefreshTime") >= currentTime);
+    }
+
+    @Test
+    void testRefreshTokenIfNeeded_NoRefreshNeeded() throws Exception {
+        // Set lastRefreshTime to not trigger refresh
+        ReflectionTestUtils.setField(tokenRefreshingDataSource, "lastRefreshTime", System.currentTimeMillis());
+
+        // Act - Call getConnection without triggering token refresh
+        tokenRefreshingDataSource.getConnection();
+
+        // Assert
+        verify(awsRdsDbPasswordFetch, never()).getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean());
+
+        // Verify connection properties remain unchanged
+        Properties props = tokenRefreshingDataSource.getConnectionProperties();
+        assertEquals("testpass", props.getProperty("password"));
     }
 }
