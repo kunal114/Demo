@@ -1,94 +1,112 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
-import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Properties;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.*;
 
+@ExtendWith(MockitoExtension.class)
 class TokenRefreshingDataSourceTest {
 
     @Mock
-    private EPVConfigVSI epvConfigVSI;
-
+    private DriverManagerDataSource mockDelegate;
     @Mock
-    private AwardsDbPasswordFetch awsRdsDbPasswordFetch;
-
+    private EPVConfigVSI mockEpvConfigVSI;
     @Mock
-    private DriverManagerDataSource delegateDataSource;
+    private AwardsDbPasswordFetch mockAwsRdsDbPasswordFetch;
+    @Mock
+    private Connection mockConnection;
 
     private TokenRefreshingDataSource tokenRefreshingDataSource;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-
-        // Mock behaviors of delegateDataSource
-        when(delegateDataSource.getUrl()).thenReturn("jdbc:mysql://localhost/test");
-        when(delegateDataSource.getUsername()).thenReturn("testuser");
-        when(delegateDataSource.getPassword()).thenReturn("testpass");
-        Properties props = new Properties();
-        props.setProperty("password", "testpass");
-        when(delegateDataSource.getConnectionProperties()).thenReturn(props);
-
-        // Initialize TokenRefreshingDataSource
-        tokenRefreshingDataSource = new TokenRefreshingDataSource(delegateDataSource, epvConfigVSI, awsRdsDbPasswordFetch);
+        tokenRefreshingDataSource = new TokenRefreshingDataSource(mockDelegate, mockEpvConfigVSI, mockAwsRdsDbPasswordFetch);
     }
 
     @Test
-    void testGetConnection() throws SQLException {
-        // Mock connection
-        Connection mockConnection = mock(Connection.class);
-        when(delegateDataSource.getConnection()).thenReturn(mockConnection);
+    void getConnection_shouldRefreshTokenAndReturnConnection() throws Exception {
+        // Arrange
+        when(mockDelegate.getConnection()).thenReturn(mockConnection);
+        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
+        when(mockAwsRdsDbPasswordFetch.getAuthToken(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyBoolean(), anyBoolean()))
+                .thenReturn("newToken");
 
         // Act
-        Connection connection = tokenRefreshingDataSource.getConnection();
+        Connection result = tokenRefreshingDataSource.getConnection();
 
         // Assert
-        assertNotNull(connection);
-        verify(delegateDataSource, times(1)).getConnection();
+        assertThat(result).isEqualTo(mockConnection);
+        verify(mockDelegate).setPassword("newToken");
+        verify(mockDelegate).getConnection();
     }
 
     @Test
-    void testRefreshTokenIfNeeded_Success() throws Exception {
-        // Simulate token refresh
-        when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn("newToken");
+    void getConnection_shouldThrowSQLExceptionWhenTokenRefreshFails() throws Exception {
+        // Arrange
+        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenThrow(new RuntimeException("Token fetch failed"));
 
-        // Set lastRefreshTime to trigger refresh
-        long currentTime = System.currentTimeMillis();
-        ReflectionTestUtils.setField(tokenRefreshingDataSource, "lastRefreshTime", currentTime - 850000);
-
-        // Act - Trigger token refresh
-        tokenRefreshingDataSource.getConnection();
-
-        // Assert
-        verify(awsRdsDbPasswordFetch, times(1)).getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean());
-
-        // Verify connection properties are updated
-        Properties props = tokenRefreshingDataSource.getConnectionProperties();
-        assertEquals("newToken", props.getProperty("password"));
-        assertTrue((Long) ReflectionTestUtils.getField(tokenRefreshingDataSource, "lastRefreshTime") >= currentTime);
+        // Act & Assert
+        assertThatThrownBy(() -> tokenRefreshingDataSource.getConnection())
+                .isInstanceOf(SQLException.class)
+                .hasMessageContaining("Failed to refresh database token");
     }
 
     @Test
-    void testRefreshTokenIfNeeded_NoRefreshNeeded() throws Exception {
-        // Set lastRefreshTime to not trigger refresh
-        ReflectionTestUtils.setField(tokenRefreshingDataSource, "lastRefreshTime", System.currentTimeMillis());
+    void getConnection_shouldNotRefreshTokenIfNotExpired() throws Exception {
+        // Arrange
+        when(mockDelegate.getConnection()).thenReturn(mockConnection);
 
-        // Act - Call getConnection without triggering token refresh
+        // Act
+        Connection result1 = tokenRefreshingDataSource.getConnection();
+        Connection result2 = tokenRefreshingDataSource.getConnection();
+
+        // Assert
+        assertThat(result1).isEqualTo(mockConnection);
+        assertThat(result2).isEqualTo(mockConnection);
+        verify(mockEpvConfigVSI, times(1)).retrieveEpvPasswordForAwsRds();
+        verify(mockDelegate, times(2)).getConnection();
+    }
+
+    @Test
+    void getConnection_withCredentials_shouldRefreshTokenAndReturnConnection() throws Exception {
+        // Arrange
+        when(mockDelegate.getConnection(anyString(), anyString())).thenReturn(mockConnection);
+        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
+        when(mockAwsRdsDbPasswordFetch.getAuthToken(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyBoolean(), anyBoolean()))
+                .thenReturn("newToken");
+
+        // Act
+        Connection result = tokenRefreshingDataSource.getConnection("username", "password");
+
+        // Assert
+        assertThat(result).isEqualTo(mockConnection);
+        verify(mockDelegate).setPassword("newToken");
+        verify(mockDelegate).getConnection("username", "password");
+    }
+
+    @Test
+    void refreshToken_shouldUpdateConnectionProperties() throws Exception {
+        // Arrange
+        Properties props = new Properties();
+        when(mockDelegate.getConnectionProperties()).thenReturn(props);
+        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
+        when(mockAwsRdsDbPasswordFetch.getAuthToken(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyBoolean(), anyBoolean()))
+                .thenReturn("newToken");
+
+        // Act
         tokenRefreshingDataSource.getConnection();
 
         // Assert
-        verify(awsRdsDbPasswordFetch, never()).getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean());
-
-        // Verify connection properties remain unchanged
-        Properties props = tokenRefreshingDataSource.getConnectionProperties();
-        assertEquals("testpass", props.getProperty("password"));
+        assertThat(props).containsEntry("password", "newToken");
+        verify(mockDelegate).setConnectionProperties(props);
     }
 }
