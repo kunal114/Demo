@@ -11,6 +11,7 @@ import java.util.Properties;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -40,8 +41,11 @@ class TokenRefreshingDataSourceTest {
         // Set up default behavior for mocks
         when(mockDelegate.getConnection()).thenReturn(mockConnection);
         when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
-        when(mockAwsRdsDbPasswordFetch.getAuthToken(anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyString(), anyBoolean(), anyBoolean()))
-                .thenReturn("newToken");
+        when(mockAwsRdsDbPasswordFetch.getAuthToken(
+            anyString(), anyString(), anyString(), anyString(), 
+            anyString(), anyString(), anyString(), anyString(), 
+            anyString(), anyBoolean(), anyBoolean()
+        )).thenReturn("newToken");
     }
 
     @Test
@@ -51,7 +55,7 @@ class TokenRefreshingDataSourceTest {
 
         // Assert
         assertThat(result).isEqualTo(mockConnection);
-        verify(mockDelegate, atLeastOnce()).setPassword(anyString());
+        verify(mockDelegate).setPassword(eq("newToken"));
         verify(mockDelegate).getConnection();
     }
 
@@ -73,7 +77,7 @@ class TokenRefreshingDataSourceTest {
 
         // Assert
         assertThat(result).isEqualTo(mockConnection);
-        verify(mockDelegate, atLeastOnce()).setPassword(anyString());
+        verify(mockDelegate).setPassword(eq("newToken"));
         verify(mockDelegate).getConnection("username", "password");
     }
 
@@ -87,7 +91,7 @@ class TokenRefreshingDataSourceTest {
         tokenRefreshingDataSource.getConnection();
 
         // Assert
-        assertThat(props).containsKey("password");
-        verify(mockDelegate, atLeastOnce()).setConnectionProperties(any(Properties.class));
+        assertThat(props).containsEntry("password", "newToken");
+        verify(mockDelegate).setConnectionProperties(argThat(p -> "newToken".equals(p.getProperty("password"))));
     }
 }
