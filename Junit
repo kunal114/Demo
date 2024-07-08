@@ -1,74 +1,81 @@
-@Configuration
-public class DataSourceConfig {
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(DataSourceConfig.class);
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Properties;
 
-    @Bean
-    public DataSource awsRdsAuroraMySqlDataSource(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        try {
-            final var props = getPropsForLocal(epvConfigVSI, awsRdsDbPasswordFetch);
-            LOGGER.info("Data Base type Lookup for datasource started");
-            DriverManagerDataSource ds = getDataSource();
-            ds.setConnectionProperties(props);
-            return new TokenRefreshingDataSource(ds, epvConfigVSI, awsRdsDbPasswordFetch);
-        } catch (Throwable t) {
-            LOGGER.error("Error creating DataSource", t);
-            throw new RuntimeException("Failed to create DataSource", t);
-        }
+public class TokenRefreshingDataSource implements DataSource {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TokenRefreshingDataSource.class);
+
+    private final DriverManagerDataSource delegate;
+    private final EPVConfigVSI epvConfigVSI;
+    private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+    private volatile long lastRefreshTime;
+    private final Object lock = new Object();
+
+    public TokenRefreshingDataSource(DriverManagerDataSource delegate, EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
+        this.delegate = delegate;
+        this.epvConfigVSI = epvConfigVSI;
+        this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
+        this.lastRefreshTime = System.currentTimeMillis();
     }
 
-    // ... other methods remain the same ...
+    @Override
+    public Connection getConnection() throws SQLException {
+        refreshTokenIfNeeded();
+        return delegate.getConnection();
+    }
 
-    private class TokenRefreshingDataSource extends DriverManagerDataSource {
-        private final EPVConfigVSI epvConfigVSI;
-        private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
-        private volatile long lastRefreshTime;
-        private final Object lock = new Object();
+    @Override
+    public Connection getConnection(String username, String password) throws SQLException {
+        refreshTokenIfNeeded();
+        return delegate.getConnection(username, password);
+    }
 
-        public TokenRefreshingDataSource(DriverManagerDataSource delegate, EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
-            super();
-            this.setUrl(delegate.getUrl());
-            this.setUsername(delegate.getUsername());
-            this.setPassword(delegate.getPassword());
-            this.setConnectionProperties(delegate.getConnectionProperties());
-            this.epvConfigVSI = epvConfigVSI;
-            this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
-            this.lastRefreshTime = System.currentTimeMillis();
-        }
-
-        @Override
-        public Connection getConnection() throws SQLException {
-            refreshTokenIfNeeded();
-            return super.getConnection();
-        }
-
-        @Override
-        public Connection getConnection(String username, String password) throws SQLException {
-            refreshTokenIfNeeded();
-            return super.getConnection(username, password);
-        }
-
-        private void refreshTokenIfNeeded() throws SQLException {
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastRefreshTime > 840000) { // 14 minutes in milliseconds
-                synchronized (lock) {
-                    if (currentTime - lastRefreshTime > 840000) {  // Double-check
-                        try {
-                            String newToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
-                            this.setPassword(newToken);
-                            // Optionally, update connection properties if needed
-                            Properties props = getConnectionProperties();
-                            props.setProperty("password", newToken);
-                            setConnectionProperties(props);
-                            lastRefreshTime = currentTime;
-                            LOGGER.info("Token refreshed successfully");
-                        } catch (Exception e) {
-                            LOGGER.error("Failed to refresh token", e);
-                            throw new SQLException("Failed to refresh database token", e);
-                        }
+    private void refreshTokenIfNeeded() throws SQLException {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastRefreshTime > 840000) { // 14 minutes in milliseconds
+            synchronized (lock) {
+                if (currentTime - lastRefreshTime > 840000) {  // Double-check
+                    try {
+                        String newToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
+                        Properties props = delegate.getConnectionProperties();
+                        props.setProperty("password", newToken);
+                        delegate.setConnectionProperties(props);
+                        lastRefreshTime = currentTime;
+                        LOGGER.info("Token refreshed successfully");
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to refresh token", e);
+                        throw new SQLException("Failed to refresh database token", e);
                     }
                 }
             }
         }
+    }
+
+    private String getToken(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
+        String fidpss = epvConfigVSI.retrieveEpvPasswordForAwsRds();
+        return awsRdsDbPasswordFetch.getAuthToken(/* Add your parameters here */);
+    }
+
+    // Implement other DataSource methods, delegating to the wrapped DataSource
+    @Override
+    public <T> T unwrap(Class<T> iface) throws SQLException {
+        return delegate.unwrap(iface);
+    }
+
+    @Override
+    public boolean isWrapperFor(Class<?> iface) throws SQLException {
+        return delegate.isWrapperFor(iface);
+    }
+
+    // ... implement other DataSource methods ...
+
+    // For testing purposes
+    void setLastRefreshTimeForTesting(long time) {
+        this.lastRefreshTime = time;
     }
 }
