@@ -1,67 +1,108 @@
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
+import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Properties;
 
-public class RefreshTokenDataSource extends DriverManagerDataSource {
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(RefreshTokenDataSource.class);
+@ExtendWith(MockitoExtension.class)
+class DataSourceConfigTest {
 
-    private final EPVConfigVSI epvConfigVSI;
-    private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
-    private volatile long lastRefreshTime;
-    private final Object lock = new Object();
+    @Mock
+    private EPVConfigVSI epvConfigVSI;
 
-    public RefreshTokenDataSource(DriverManagerDataSource delegate, EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
-        super();
-        this.setUrl(delegate.getUrl());
-        this.setUsername(delegate.getUsername());
-        this.setPassword(delegate.getPassword());
-        this.setConnectionProperties(delegate.getConnectionProperties());
-        this.epvConfigVSI = epvConfigVSI;
-        this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
-        this.lastRefreshTime = System.currentTimeMillis();
+    @Mock
+    private AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+
+    @Mock
+    private Connection mockConnection;
+
+    private DataSourceConfig dataSourceConfig;
+
+    @BeforeEach
+    void setUp() {
+        dataSourceConfig = new DataSourceConfig();
     }
 
-    @Override
-    public Connection getConnection() throws SQLException {
-        refreshTokenIfNeeded();
-        return super.getConnection();
+    @Test
+    void testAwsRdsAuroraMySqlDataSource() throws Exception {
+        // Arrange
+        Properties mockProps = new Properties();
+        mockProps.setProperty("password", "initialToken");
+        when(dataSourceConfig.getPropsForLocal(any(), any())).thenReturn(mockProps);
+        
+        DriverManagerDataSource mockDs = mock(DriverManagerDataSource.class);
+        when(dataSourceConfig.getDataSource()).thenReturn(mockDs);
+
+        // Act
+        DataSource result = dataSourceConfig.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
+
+        // Assert
+        assertNotNull(result);
+        assertTrue(result instanceof TokenRefreshingDataSource);
+        verify(mockDs).setConnectionProperties(mockProps);
     }
 
-    @Override
-    public Connection getConnection(String username, String password) throws SQLException {
-        refreshTokenIfNeeded();
-        return super.getConnection(username, password);
+    @Test
+    void testTokenRefreshingDataSource_GetConnection() throws Exception {
+        // Arrange
+        DriverManagerDataSource mockDelegate = mock(DriverManagerDataSource.class);
+        when(mockDelegate.getConnection()).thenReturn(mockConnection);
+
+        when(dataSourceConfig.getToken(any(), any())).thenReturn("newToken");
+
+        TokenRefreshingDataSource tokenRefreshingDataSource = 
+            new DataSourceConfig().new TokenRefreshingDataSource(mockDelegate, epvConfigVSI, awsRdsDbPasswordFetch);
+
+        // Act
+        Connection connection = tokenRefreshingDataSource.getConnection();
+
+        // Assert
+        assertNotNull(connection);
+        assertEquals(mockConnection, connection);
     }
 
-    private void refreshTokenIfNeeded() throws SQLException {
-        long currentTime = System.currentTimeMillis();
-        if (currentTime - lastRefreshTime > 840000) { // 14 minutes in milliseconds
-            synchronized (lock) {
-                if (currentTime - lastRefreshTime > 840000) {  // Double-check
-                    try {
-                        String newToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
-                        this.setPassword(newToken);
-                        Properties props = getConnectionProperties();
-                        props.setProperty("password", newToken);
-                        setConnectionProperties(props);
-                        lastRefreshTime = currentTime;
-                        LOGGER.info("Token refreshed successfully");
-                    } catch (Exception e) {
-                        LOGGER.error("Failed to refresh token", e);
-                        throw new SQLException("Failed to refresh database token", e);
-                    }
-                }
-            }
-        }
+    @Test
+    void testTokenRefreshingDataSource_TokenRefresh() throws Exception {
+        // Arrange
+        DriverManagerDataSource mockDelegate = mock(DriverManagerDataSource.class);
+        when(mockDelegate.getConnection()).thenReturn(mockConnection);
+
+        when(dataSourceConfig.getToken(any(), any())).thenReturn("newToken");
+
+        TokenRefreshingDataSource tokenRefreshingDataSource = 
+            new DataSourceConfig().new TokenRefreshingDataSource(mockDelegate, epvConfigVSI, awsRdsDbPasswordFetch);
+
+        // Act
+        tokenRefreshingDataSource.getConnection(); // First call
+        Thread.sleep(850000); // Sleep for more than 14 minutes
+        tokenRefreshingDataSource.getConnection(); // Second call, should trigger refresh
+
+        // Assert
+        verify(dataSourceConfig, times(1)).getToken(any(), any());
     }
 
-    private String getToken(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        String fidpss = epvConfigVSI.retrieveEpvPasswordForAwsRds();
-        return awsRdsDbPasswordFetch.getAuthToken(domain, servername, port, username, fid, fidpss, region, awsaccount, role, onprem, true);
+    @Test
+    void testTokenRefreshingDataSource_RefreshFailure() throws Exception {
+        // Arrange
+        DriverManagerDataSource mockDelegate = mock(DriverManagerDataSource.class);
+        when(mockDelegate.getConnection()).thenReturn(mockConnection);
+
+        when(dataSourceConfig.getToken(any(), any())).thenThrow(new RuntimeException("Token fetch failed"));
+
+        TokenRefreshingDataSource tokenRefreshingDataSource = 
+            new DataSourceConfig().new TokenRefreshingDataSource(mockDelegate, epvConfigVSI, awsRdsDbPasswordFetch);
+
+        // Act & Assert
+        Thread.sleep(850000); // Sleep for more than 14 minutes
+        assertThrows(SQLException.class, () -> tokenRefreshingDataSource.getConnection());
     }
 }
