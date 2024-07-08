@@ -1,119 +1,122 @@
-To address the failure in refreshing the database token, we need to ensure that the mock setup and the context are correctly aligned. Here's an updated version of the test to ensure that all aspects, including the token refresh logic, are correctly handled.
+Given that `getPropsForLocal` is a private method, we need to approach the testing differently. We can use `Mockito` to mock the behavior of the `DataSourceConfig` class itself to simulate the exception being thrown from within the private method. This way, we can still ensure that the catch block is tested properly.
 
+Here’s how you can do it:
+
+1. Use `Mockito.spy` to create a partial mock of the `DataSourceConfig` class.
+2. Use `ReflectionTestUtils` to make the private method accessible.
+3. Mock the private method to throw an exception.
+4. Verify that the exception is handled correctly by the catch block.
+
+Here’s the complete code:
+
+**DataSourceConfigTest.java**:
 ```java
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 import javax.sql.DataSource;
-import java.sql.Connection;
-import java.sql.SQLException;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 class DataSourceConfigTest {
 
-    private EPVConfigVSI epvConfigVSI;
-    private AwardsDbPasswordFetch awsRdsDbPasswordFetch;
-    private DriverManagerDataSource delegate;
-    private DataSourceConfig.TokenRefreshingDataSource dataSource;
-
-    @BeforeEach
-    void setUp() {
-        epvConfigVSI = mock(EPVConfigVSI.class);
-        awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
-        delegate = mock(DriverManagerDataSource.class);
-        dataSource = new DataSourceConfig().new TokenRefreshingDataSource(delegate, epvConfigVSI, awsRdsDbPasswordFetch);
-    }
-
     @Test
-    void testAwsRdsAuroraMySqlDataSource_WithDbAuthToken() throws Exception {
+    void testAwsRdsAuroraMySqlDataSource_ExceptionHandling() {
         // Setup
-        when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
-                .thenReturn("token");
+        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
+        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
+        DataSourceConfig config = spy(new DataSourceConfig());
 
-        DataSourceConfig config = new DataSourceConfig();
+        // Make the private method accessible and mock it to throw an exception
+        ReflectionTestUtils.setField(config, "getPropsForLocal", (Object) (epvConfigVSI1, awsRdsDbPasswordFetch1) -> {
+            throw new RuntimeException("Mocked exception");
+        });
 
-        ReflectionTestUtils.setField(config, "dataSourceUrl", "testuri");
-        ReflectionTestUtils.setField(config, "dataSourceUserName", "testuser");
-        ReflectionTestUtils.setField(config, "dataSourceDriverClassName", "software.aws.rds.jdbc.mysql.Driver");
+        // Action & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            config.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
+        });
 
-        // Action
-        DataSource dataSource = config.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
-
-        // Assert
-        assertNotNull(dataSource);
-        assertTrue(dataSource instanceof DataSourceConfig.TokenRefreshingDataSource);
-
-        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertEquals("token", connectionProps.getProperty("password"));
-    }
-
-    @Test
-    void testAwsRdsAuroraMySqlDataSource_WithDbAuthTokenne() throws Exception {
-        // Setup
-        when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
-                .thenReturn(null);
-
-        DataSourceConfig config = new DataSourceConfig();
-
-        ReflectionTestUtils.setField(config, "dataSourceUrl", "testuri");
-        ReflectionTestUtils.setField(config, "dataSourceUserName", "testuser");
-        ReflectionTestUtils.setField(config, "dataSourceDriverClassName", "software.aws.rds.jdbc.mysql.Driver");
-
-        // Action
-        DataSource dataSource = config.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
-
-        // Assert
-        assertNotNull(dataSource);
-        assertTrue(dataSource instanceof DataSourceConfig.TokenRefreshingDataSource);
-
-        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertNull(connectionProps.getProperty("password"));
-    }
-
-    @Test
-    void testTokenRefreshingDataSource_RefreshTokenIfNeeded() throws Exception {
-        // Setup
-        when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
-                .thenReturn("newToken");
-
-        // Mocking getConnection from delegate to return a mock connection
-        Connection mockConnection = mock(Connection.class);
-        when(delegate.getConnection()).thenReturn(mockConnection);
-
-        // Set last refresh time to a past time to force refresh
-        ReflectionTestUtils.setField(dataSource, "lastRefreshTime", System.currentTimeMillis() - 900000); // 15 minutes ago
-
-        // Action
-        Connection connection = dataSource.getConnection();
-
-        // Assert
-        assertNotNull(connection);
-        verify(delegate, times(1)).getConnection(); // Ensure that the delegate's getConnection was called
-
-        Properties connectionProps = (Properties) ReflectionTestUtils.getField(dataSource, "connectionProperties");
-        assertEquals("newToken", connectionProps.getProperty("password"));
+        assertEquals("Failed to create DataSource", exception.getMessage());
     }
 }
 ```
 
-**Changes Made:**
+If the above approach using `ReflectionTestUtils` to mock a private method does not work due to the complexities of reflection, we can alternatively refactor the `DataSourceConfig` class to make it more testable. Specifically, we can make the `getPropsForLocal` method package-private (default access) and test it more easily.
 
-1. **Setup Method**:
-   - Added a `@BeforeEach` setup method to initialize the mocks and the `TokenRefreshingDataSource`.
+**Refactor DataSourceConfig.java**:
+```java
+@Configuration
+public class DataSourceConfig {
 
-2. **Mock Connection**:
-   - Mocked the `Connection` object and configured the `delegate` data source to return this mock connection when `getConnection` is called.
+    private static final Logger LOGGER = LoggerFactory.getLogger(DataSourceConfig.class);
 
-3. **Token Refresh Test**:
-   - Ensured that the `awsRdsDbPasswordFetch.getAuthToken` method returns a new token.
-   - Verified that the delegate's `getConnection` method was called.
-   - Checked that the `password` property in the `connectionProperties` was updated to the new token.
+    @Bean
+    public DataSource awsRdsAuroraMySqlDataSource(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
+        try {
+            final var props = getPropsForLocal(epvConfigVSI, awsRdsDbPasswordFetch);
+            LOGGER.info("Data Base type Lookup for datasource started");
+            DriverManagerDataSource ds = getDataSource();
+            ds.setConnectionProperties(props);
+            return new TokenRefreshingDataSource(ds, epvConfigVSI, awsRdsDbPasswordFetch);
+        } catch (Throwable t) {
+            LOGGER.error("Error creating DataSource", t);
+            throw new RuntimeException("Failed to create DataSource", t);
+        }
+    }
 
-This should address the token refresh functionality and ensure that the test covers the `refreshTokenIfNeeded` method correctly.
+    // Change this method's access to package-private for testing purposes
+    Properties getPropsForLocal(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
+        // Dummy implementation for example
+        return new Properties();
+    }
+
+    private DriverManagerDataSource getDataSource() {
+        // Dummy implementation for example
+        return new DriverManagerDataSource();
+    }
+
+    // Other methods and inner classes remain the same...
+}
+```
+
+**Updated DataSourceConfigTest.java**:
+```java
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
+
+import javax.sql.DataSource;
+import java.util.Properties;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class DataSourceConfigTest {
+
+    @Test
+    void testAwsRdsAuroraMySqlDataSource_ExceptionHandling() {
+        // Setup
+        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
+        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
+        DataSourceConfig config = spy(new DataSourceConfig());
+
+        // Mock getPropsForLocal to throw an exception
+        doThrow(new RuntimeException("Mocked exception")).when(config).getPropsForLocal(any(), any());
+
+        // Action & Assert
+        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
+            config.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
+        });
+
+        assertEquals("Failed to create DataSource", exception.getMessage());
+    }
+}
+```
+
+By making `getPropsForLocal` package-private, we make it easier to mock and test, ensuring that the catch block in `awsRdsAuroraMySqlDataSource` is properly exercised.
