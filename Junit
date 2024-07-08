@@ -1,91 +1,116 @@
-Given that `getPropsForLocal` is a private method, we need to test the exception handling in a way that doesn't directly mock the private method. Instead, we can mock or spy on the components that are used within the method to simulate an exception being thrown.
+To write a JUnit 5 test for the `TokenRefreshingDataSource` class, we need to focus on the `refreshTokenIfNeeded` method and its behavior. We will need to:
 
-Here’s how you can do it:
+1. Mock dependencies like `EPVConfigVSI` and `AwardsDbPasswordFetch`.
+2. Create a `TokenRefreshingDataSource` instance.
+3. Simulate scenarios where the token needs to be refreshed.
+4. Ensure that the token is refreshed correctly and exceptions are handled properly.
 
-1. Use `Mockito.spy` to create a partial mock of the `DataSourceConfig` class.
-2. Use `Mockito.doThrow` to simulate an exception from the private method.
-3. Verify that the exception is handled correctly by the catch block.
+Below is the JUnit 5 test class for the `TokenRefreshingDataSource`:
 
-Below is an updated approach for writing the test:
-
-**DataSourceConfigTest.java**:
 ```java
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.springframework.test.util.ReflectionTestUtils;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
-import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class DataSourceConfigTest {
+class TokenRefreshingDataSourceTest {
+
+    @Mock
+    private EPVConfigVSI epvConfigVSI;
+
+    @Mock
+    private AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+
+    @Mock
+    private DriverManagerDataSource delegateDataSource;
+
+    private TokenRefreshingDataSource tokenRefreshingDataSource;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+
+        when(delegateDataSource.getUrl()).thenReturn("jdbc:mysql://localhost/test");
+        when(delegateDataSource.getUsername()).thenReturn("testuser");
+        when(delegateDataSource.getPassword()).thenReturn("testpass");
+        Properties props = new Properties();
+        props.setProperty("password", "testpass");
+        when(delegateDataSource.getConnectionProperties()).thenReturn(props);
+
+        tokenRefreshingDataSource = new TokenRefreshingDataSource(delegateDataSource, epvConfigVSI, awsRdsDbPasswordFetch);
+    }
 
     @Test
-    void testAwsRdsAuroraMySqlDataSource_ExceptionHandling() {
-        // Setup
-        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
-        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
-        DataSourceConfig config = spy(new DataSourceConfig());
+    void testGetConnection() throws SQLException {
+        // Mock connection
+        Connection mockConnection = mock(Connection.class);
+        when(delegateDataSource.getConnection()).thenReturn(mockConnection);
 
-        // Mock the DataSourceConfig to throw an exception when calling getPropsForLocal
-        doReturn(new Properties()).when(config).getDataSource();
-        doThrow(new RuntimeException("Mocked exception")).when(config).getPropsForLocal(any(), any());
+        // Act
+        Connection connection = tokenRefreshingDataSource.getConnection();
 
-        // Action & Assert
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            config.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
+        // Assert
+        assertNotNull(connection);
+        verify(delegateDataSource, times(1)).getConnection();
+    }
+
+    @Test
+    void testRefreshTokenIfNeeded() throws Exception {
+        // Simulate token refresh
+        when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean())).thenReturn("newToken");
+
+        // Act - Simulate the passage of time to trigger token refresh
+        ReflectionTestUtils.setField(tokenRefreshingDataSource, "lastRefreshTime", System.currentTimeMillis() - 850000);
+        tokenRefreshingDataSource.getConnection();
+
+        // Assert
+        verify(awsRdsDbPasswordFetch, times(1)).getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean());
+        Properties props = tokenRefreshingDataSource.getConnectionProperties();
+        assertEquals("newToken", props.getProperty("password"));
+    }
+
+    @Test
+    void testRefreshTokenIfNeeded_Failure() throws Exception {
+        // Simulate token refresh failure
+        when(awsRdsDbPasswordFetch.getAuthToken(any(), any(), anyInt(), any(), any(), any(), any(), any(), any(), anyBoolean()))
+                .thenThrow(new RuntimeException("Token fetch failed"));
+
+        // Act - Simulate the passage of time to trigger token refresh
+        ReflectionTestUtils.setField(tokenRefreshingDataSource, "lastRefreshTime", System.currentTimeMillis() - 850000);
+
+        SQLException exception = assertThrows(SQLException.class, () -> {
+            tokenRefreshingDataSource.getConnection();
         });
 
-        assertEquals("Failed to create DataSource", exception.getMessage());
+        // Assert
+        assertEquals("Failed to refresh database token", exception.getMessage());
     }
 }
 ```
 
-If mocking the private method directly with `doThrow` doesn't work due to the limitations of `Mockito` with private methods, you can simulate the failure of the dependent method (`getDataSource` or any other public method) to trigger the exception handling logic.
+**Explanation:**
 
-Here is an alternative approach:
+1. **Mock Setup**:
+   - Mock the `EPVConfigVSI`, `AwardsDbPasswordFetch`, and `DriverManagerDataSource` using Mockito.
+   - Initialize the `TokenRefreshingDataSource` with these mocks.
 
-**Alternative DataSourceConfigTest.java**:
-```java
-import org.junit.jupiter.api.Test;
-import org.mockito.Mockito;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+2. **Test `getConnection`**:
+   - Verify that calling `getConnection` on `TokenRefreshingDataSource` delegates the call to the underlying `DriverManagerDataSource`.
 
-import javax.sql.DataSource;
-import java.util.Properties;
+3. **Test `refreshTokenIfNeeded`**:
+   - Simulate a token refresh by setting `lastRefreshTime` to a time before the threshold.
+   - Verify that the token is refreshed and the new token is set correctly in the properties.
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+4. **Test `refreshTokenIfNeeded` Failure**:
+   - Simulate a failure in token refresh by throwing an exception when `getAuthToken` is called.
+   - Ensure that a `SQLException` is thrown with the correct message.
 
-class DataSourceConfigTest {
-
-    @Test
-    void testAwsRdsAuroraMySqlDataSource_ExceptionHandling() {
-        // Setup
-        EPVConfigVSI epvConfigVSI = mock(EPVConfigVSI.class);
-        AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
-        DataSourceConfig config = spy(new DataSourceConfig());
-
-        // Mock the getDataSource method to throw an exception
-        doThrow(new RuntimeException("Mocked exception")).when(config).getDataSource();
-
-        // Action & Assert
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            config.awsRdsAuroraMySqlDataSource(epvConfigVSI, awsRdsDbPasswordFetch);
-        });
-
-        assertEquals("Failed to create DataSource", exception.getMessage());
-    }
-}
-```
-
-In this approach, we:
-1. Spy on the `DataSourceConfig` instance.
-2. Mock the `getDataSource` method to throw a `RuntimeException`.
-3. Verify that the exception is handled and the correct error message is thrown.
-
-This ensures that the exception handling in the `awsRdsAuroraMySqlDataSource` method is properly tested, even if the private method `getPropsForLocal` cannot be directly mocked.
+This test setup ensures that all critical paths in the `TokenRefreshingDataSource` class are covered, including successful token refresh and handling of exceptions during token refresh.
