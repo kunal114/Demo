@@ -1,13 +1,12 @@
-Given that `getPropsForLocal` is a private method, we need to approach the testing differently. We can use `Mockito` to mock the behavior of the `DataSourceConfig` class itself to simulate the exception being thrown from within the private method. This way, we can still ensure that the catch block is tested properly.
+Given that `getPropsForLocal` is a private method, we need to test the exception handling in a way that doesn't directly mock the private method. Instead, we can mock or spy on the components that are used within the method to simulate an exception being thrown.
 
 Here’s how you can do it:
 
 1. Use `Mockito.spy` to create a partial mock of the `DataSourceConfig` class.
-2. Use `ReflectionTestUtils` to make the private method accessible.
-3. Mock the private method to throw an exception.
-4. Verify that the exception is handled correctly by the catch block.
+2. Use `Mockito.doThrow` to simulate an exception from the private method.
+3. Verify that the exception is handled correctly by the catch block.
 
-Here’s the complete code:
+Below is an updated approach for writing the test:
 
 **DataSourceConfigTest.java**:
 ```java
@@ -31,10 +30,9 @@ class DataSourceConfigTest {
         AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
         DataSourceConfig config = spy(new DataSourceConfig());
 
-        // Make the private method accessible and mock it to throw an exception
-        ReflectionTestUtils.setField(config, "getPropsForLocal", (Object) (epvConfigVSI1, awsRdsDbPasswordFetch1) -> {
-            throw new RuntimeException("Mocked exception");
-        });
+        // Mock the DataSourceConfig to throw an exception when calling getPropsForLocal
+        doReturn(new Properties()).when(config).getDataSource();
+        doThrow(new RuntimeException("Mocked exception")).when(config).getPropsForLocal(any(), any());
 
         // Action & Assert
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
@@ -46,45 +44,11 @@ class DataSourceConfigTest {
 }
 ```
 
-If the above approach using `ReflectionTestUtils` to mock a private method does not work due to the complexities of reflection, we can alternatively refactor the `DataSourceConfig` class to make it more testable. Specifically, we can make the `getPropsForLocal` method package-private (default access) and test it more easily.
+If mocking the private method directly with `doThrow` doesn't work due to the limitations of `Mockito` with private methods, you can simulate the failure of the dependent method (`getDataSource` or any other public method) to trigger the exception handling logic.
 
-**Refactor DataSourceConfig.java**:
-```java
-@Configuration
-public class DataSourceConfig {
+Here is an alternative approach:
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(DataSourceConfig.class);
-
-    @Bean
-    public DataSource awsRdsAuroraMySqlDataSource(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        try {
-            final var props = getPropsForLocal(epvConfigVSI, awsRdsDbPasswordFetch);
-            LOGGER.info("Data Base type Lookup for datasource started");
-            DriverManagerDataSource ds = getDataSource();
-            ds.setConnectionProperties(props);
-            return new TokenRefreshingDataSource(ds, epvConfigVSI, awsRdsDbPasswordFetch);
-        } catch (Throwable t) {
-            LOGGER.error("Error creating DataSource", t);
-            throw new RuntimeException("Failed to create DataSource", t);
-        }
-    }
-
-    // Change this method's access to package-private for testing purposes
-    Properties getPropsForLocal(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
-        // Dummy implementation for example
-        return new Properties();
-    }
-
-    private DriverManagerDataSource getDataSource() {
-        // Dummy implementation for example
-        return new DriverManagerDataSource();
-    }
-
-    // Other methods and inner classes remain the same...
-}
-```
-
-**Updated DataSourceConfigTest.java**:
+**Alternative DataSourceConfigTest.java**:
 ```java
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
@@ -106,8 +70,8 @@ class DataSourceConfigTest {
         AwardsDbPasswordFetch awsRdsDbPasswordFetch = mock(AwardsDbPasswordFetch.class);
         DataSourceConfig config = spy(new DataSourceConfig());
 
-        // Mock getPropsForLocal to throw an exception
-        doThrow(new RuntimeException("Mocked exception")).when(config).getPropsForLocal(any(), any());
+        // Mock the getDataSource method to throw an exception
+        doThrow(new RuntimeException("Mocked exception")).when(config).getDataSource();
 
         // Action & Assert
         RuntimeException exception = assertThrows(RuntimeException.class, () -> {
@@ -119,4 +83,9 @@ class DataSourceConfigTest {
 }
 ```
 
-By making `getPropsForLocal` package-private, we make it easier to mock and test, ensuring that the catch block in `awsRdsAuroraMySqlDataSource` is properly exercised.
+In this approach, we:
+1. Spy on the `DataSourceConfig` instance.
+2. Mock the `getDataSource` method to throw a `RuntimeException`.
+3. Verify that the exception is handled and the correct error message is thrown.
+
+This ensures that the exception handling in the `awsRdsAuroraMySqlDataSource` method is properly tested, even if the private method `getPropsForLocal` cannot be directly mocked.
