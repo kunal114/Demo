@@ -1,47 +1,67 @@
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
 import java.util.Properties;
 
-@Configuration
-public class DataSourceConfig {
+public class RefreshTokenDataSource extends DriverManagerDataSource {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(DataSourceConfig.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(RefreshTokenDataSource.class);
 
-    @Bean
-    public DataSource awsRdsAuroraMySqlDataSource(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        try {
-            final var props = getPropsForLocal(epvConfigVSI, awsRdsDbPasswordFetch);
-            LOGGER.info("Data Base type Lookup for datasource started");
-            DriverManagerDataSource ds = getDataSource();
-            ds.setConnectionProperties(props);
-            return new TokenRefreshingDataSource(ds, epvConfigVSI, awsRdsDbPasswordFetch);
-        } catch (Throwable t) {
-            LOGGER.error("Password Expired! (", t);
-            throw new RuntimeException("Failed to create DataSource", t);
-        }
+    private final EPVConfigVSI epvConfigVSI;
+    private final AwardsDbPasswordFetch awsRdsDbPasswordFetch;
+    private volatile long lastRefreshTime;
+    private final Object lock = new Object();
+
+    public RefreshTokenDataSource(DriverManagerDataSource delegate, EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) {
+        super();
+        this.setUrl(delegate.getUrl());
+        this.setUsername(delegate.getUsername());
+        this.setPassword(delegate.getPassword());
+        this.setConnectionProperties(delegate.getConnectionProperties());
+        this.epvConfigVSI = epvConfigVSI;
+        this.awsRdsDbPasswordFetch = awsRdsDbPasswordFetch;
+        this.lastRefreshTime = System.currentTimeMillis();
     }
 
-    private Properties getPropsForLocal(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
-        var props = getProps();
-        if (dbAuthToken != null && dbAuthToken.equalsIgnoreCase("na")) {
-            props.setProperty(PROP_AWS_IAM, Boolean.TRUE.toString());
-        } else {
-            props.setProperty(PROP_AWS_IAM, Boolean.FALSE.toString());
-            dbAuthToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
-            props.setProperty("password", dbAuthToken);
+    @Override
+    public Connection getConnection() throws SQLException {
+        refreshTokenIfNeeded();
+        return super.getConnection();
+    }
+
+    @Override
+    public Connection getConnection(String username, String password) throws SQLException {
+        refreshTokenIfNeeded();
+        return super.getConnection(username, password);
+    }
+
+    private void refreshTokenIfNeeded() throws SQLException {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastRefreshTime > 840000) { // 14 minutes in milliseconds
+            synchronized (lock) {
+                if (currentTime - lastRefreshTime > 840000) {  // Double-check
+                    try {
+                        String newToken = getToken(epvConfigVSI, awsRdsDbPasswordFetch);
+                        this.setPassword(newToken);
+                        Properties props = getConnectionProperties();
+                        props.setProperty("password", newToken);
+                        setConnectionProperties(props);
+                        lastRefreshTime = currentTime;
+                        LOGGER.info("Token refreshed successfully");
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to refresh token", e);
+                        throw new SQLException("Failed to refresh database token", e);
+                    }
+                }
+            }
         }
-        return props;
     }
 
     private String getToken(EPVConfigVSI epvConfigVSI, AwardsDbPasswordFetch awsRdsDbPasswordFetch) throws Exception {
         String fidpss = epvConfigVSI.retrieveEpvPasswordForAwsRds();
-        return awsRdsDbPasswordFetch.getAuthToken(/* add your parameters here */);
+        return awsRdsDbPasswordFetch.getAuthToken(domain, servername, port, username, fid, fidpss, region, awsaccount, role, onprem, true);
     }
-
-    // Assume these methods are implemented elsewhere in your class
-    protected DriverManagerDataSource getDataSource() { /* ... */ }
-    protected Properties getProps() { /* ... */ }
 }
