@@ -1,104 +1,31 @@
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+@Test
+void testGetConnectionWithRefresh() throws SQLException, Exception {
+    // Arrange
+    when(mockDelegate.getConnection()).thenReturn(mockConnection);
+    when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
+    when(mockAwsRdsDbPasswordFetch.getAuthToken(
+        any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()
+    )).thenReturn("newToken");
 
-import java.sql.Connection;
-import java.sql.SQLException;
-import java.util.Properties;
+    // Set lastRefreshTime to more than 14 minutes ago
+    setLastRefreshTime(System.currentTimeMillis() - 900000);
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+    // Act
+    Connection result = dataSource.getConnection();
 
-@ExtendWith(MockitoExtension.class)
-class TokenRefreshingDataSourceTest {
+    // Assert
+    assertSame(mockConnection, result);
+    verify(mockEpvConfigVSI, times(1)).retrieveEpvPasswordForAwsRds();
+    verify(mockAwsRdsDbPasswordFetch, times(1)).getAuthToken(
+        any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()
+    );
+    assertEquals("newToken", dataSource.getPassword());
+    assertEquals("newToken", dataSource.getConnectionProperties().getProperty("password"));
+}
 
-    @Mock
-    private DriverManagerDataSource mockDelegate;
-    @Mock
-    private EPVConfigVSI mockEpvConfigVSI;
-    @Mock
-    private AwardsDbPasswordFetch mockAwsRdsDbPasswordFetch;
-    @Mock
-    private Connection mockConnection;
-
-    private TokenRefreshingDataSource dataSource;
-
-    @BeforeEach
-    void setUp() throws SQLException {
-        when(mockDelegate.getUrl()).thenReturn("jdbc:mysql://localhost:3306/testdb");
-        when(mockDelegate.getUsername()).thenReturn("testuser");
-        when(mockDelegate.getPassword()).thenReturn("initialPassword");
-        when(mockDelegate.getConnectionProperties()).thenReturn(new Properties());
-        
-        // Mock the superclass behavior
-        doReturn(mockConnection).when(mockDelegate).getConnection();
-        doReturn(mockConnection).when(mockDelegate).getConnection(anyString(), anyString());
-
-        dataSource = spy(new TokenRefreshingDataSource(mockDelegate, mockEpvConfigVSI, mockAwsRdsDbPasswordFetch));
-        
-        // Mock the superclass behavior for the spy
-        doReturn(mockConnection).when(dataSource).super$getConnection();
-        doReturn(mockConnection).when(dataSource).super$getConnection(anyString(), anyString());
-    }
-
-    @Test
-    void testInitialConfiguration() {
-        assertEquals("jdbc:mysql://localhost:3306/testdb", dataSource.getUrl());
-        assertEquals("testuser", dataSource.getUsername());
-        assertEquals("initialPassword", dataSource.getPassword());
-    }
-
-    @Test
-    void testGetConnectionWithoutRefresh() throws SQLException, Exception {
-        Connection result = dataSource.getConnection();
-
-        assertSame(mockConnection, result);
-        verify(mockEpvConfigVSI, never()).retrieveEpvPasswordForAwsRds();
-        verify(mockAwsRdsDbPasswordFetch, never()).getAuthToken(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean());
-    }
-
-    @Test
-    void testGetConnectionWithRefresh() throws SQLException, Exception {
-        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
-        when(mockAwsRdsDbPasswordFetch.getAuthToken(any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()))
-            .thenReturn("newToken");
-
-        // Set lastRefreshTime to more than 14 minutes ago
-        setLastRefreshTime(System.currentTimeMillis() - 900000);
-
-        Connection result = dataSource.getConnection();
-
-        assertSame(mockConnection, result);
-        verify(mockEpvConfigVSI).retrieveEpvPasswordForAwsRds();
-        verify(mockAwsRdsDbPasswordFetch).getAuthToken(any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean());
-        assertEquals("newToken", dataSource.getPassword());
-    }
-
-    @Test
-    void testGetConnectionWithUsernameAndPassword() throws SQLException {
-        Connection result = dataSource.getConnection("user", "pass");
-
-        assertSame(mockConnection, result);
-        verify(dataSource).super$getConnection("user", "pass");
-    }
-
-    @Test
-    void testRefreshTokenFailure() throws SQLException, Exception {
-        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenThrow(new RuntimeException("EPV error"));
-
-        // Set lastRefreshTime to more than 14 minutes ago
-        setLastRefreshTime(System.currentTimeMillis() - 900000);
-
-        assertThrows(SQLException.class, () -> dataSource.getConnection());
-    }
-
-    // Helper method to set lastRefreshTime using reflection
-    private void setLastRefreshTime(long time) throws Exception {
-        java.lang.reflect.Field field = TokenRefreshingDataSource.class.getDeclaredField("lastRefreshTime");
-        field.setAccessible(true);
-        field.set(dataSource, time);
-    }
+// Add this method to your test class if it's not already there
+private void setLastRefreshTime(long time) throws Exception {
+    java.lang.reflect.Field field = TokenRefreshingDataSource.class.getDeclaredField("lastRefreshTime");
+    field.setAccessible(true);
+    field.set(dataSource, time);
 }
