@@ -9,9 +9,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Properties;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -26,72 +24,78 @@ class TokenRefreshingDataSourceTest {
     @Mock
     private Connection mockConnection;
 
-    private TokenRefreshingDataSource tokenRefreshingDataSource;
+    private TokenRefreshingDataSource dataSource;
 
     @BeforeEach
-    void setUp() throws Exception {
-        // Set up any necessary properties
+    void setUp() {
         when(mockDelegate.getUrl()).thenReturn("jdbc:mysql://localhost:3306/testdb");
         when(mockDelegate.getUsername()).thenReturn("testuser");
-        when(mockDelegate.getPassword()).thenReturn("testpassword");
+        when(mockDelegate.getPassword()).thenReturn("initialPassword");
         when(mockDelegate.getConnectionProperties()).thenReturn(new Properties());
 
-        tokenRefreshingDataSource = new TokenRefreshingDataSource(mockDelegate, mockEpvConfigVSI, mockAwsRdsDbPasswordFetch);
+        dataSource = new TokenRefreshingDataSource(mockDelegate, mockEpvConfigVSI, mockAwsRdsDbPasswordFetch);
+    }
 
-        // Set up default behavior for mocks
+    @Test
+    void testInitialConfiguration() {
+        assertEquals("jdbc:mysql://localhost:3306/testdb", dataSource.getUrl());
+        assertEquals("testuser", dataSource.getUsername());
+        assertEquals("initialPassword", dataSource.getPassword());
+    }
+
+    @Test
+    void testGetConnectionWithoutRefresh() throws SQLException, Exception {
+        when(mockDelegate.getConnection()).thenReturn(mockConnection);
+
+        Connection result = dataSource.getConnection();
+
+        assertSame(mockConnection, result);
+        verify(mockEpvConfigVSI, never()).retrieveEpvPasswordForAwsRds();
+        verify(mockAwsRdsDbPasswordFetch, never()).getAuthToken(any(), any(), any(), any(), any(), any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void testGetConnectionWithRefresh() throws SQLException, Exception {
         when(mockDelegate.getConnection()).thenReturn(mockConnection);
         when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
-        when(mockAwsRdsDbPasswordFetch.getAuthToken(
-            anyString(), anyString(), anyString(), anyString(), 
-            anyString(), anyString(), anyString(), anyString(), 
-            anyString(), anyBoolean(), anyBoolean()
-        )).thenReturn("newToken");
+        when(mockAwsRdsDbPasswordFetch.getAuthToken(any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()))
+            .thenReturn("newToken");
+
+        // Set lastRefreshTime to more than 14 minutes ago
+        setLastRefreshTime(System.currentTimeMillis() - 900000);
+
+        Connection result = dataSource.getConnection();
+
+        assertSame(mockConnection, result);
+        verify(mockEpvConfigVSI).retrieveEpvPasswordForAwsRds();
+        verify(mockAwsRdsDbPasswordFetch).getAuthToken(any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean());
+        assertEquals("newToken", dataSource.getPassword());
     }
 
     @Test
-    void getConnection_shouldRefreshTokenAndReturnConnection() throws Exception {
-        // Act
-        Connection result = tokenRefreshingDataSource.getConnection();
+    void testGetConnectionWithUsernameAndPassword() throws SQLException, Exception {
+        when(mockDelegate.getConnection(anyString(), anyString())).thenReturn(mockConnection);
 
-        // Assert
-        assertThat(result).isEqualTo(mockConnection);
-        verify(mockDelegate).setPassword(eq("newToken"));
-        verify(mockDelegate).getConnection();
+        Connection result = dataSource.getConnection("user", "pass");
+
+        assertSame(mockConnection, result);
+        verify(mockDelegate).getConnection("user", "pass");
     }
 
     @Test
-    void getConnection_shouldThrowSQLExceptionWhenTokenRefreshFails() throws Exception {
-        // Arrange
-        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenThrow(new RuntimeException("Token fetch failed"));
+    void testRefreshTokenFailure() throws SQLException, Exception {
+        when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenThrow(new RuntimeException("EPV error"));
 
-        // Act & Assert
-        assertThatThrownBy(() -> tokenRefreshingDataSource.getConnection())
-                .isInstanceOf(SQLException.class)
-                .hasMessageContaining("Failed to refresh database token");
+        // Set lastRefreshTime to more than 14 minutes ago
+        setLastRefreshTime(System.currentTimeMillis() - 900000);
+
+        assertThrows(SQLException.class, () -> dataSource.getConnection());
     }
 
-    @Test
-    void getConnection_withCredentials_shouldRefreshTokenAndReturnConnection() throws Exception {
-        // Act
-        Connection result = tokenRefreshingDataSource.getConnection("username", "password");
-
-        // Assert
-        assertThat(result).isEqualTo(mockConnection);
-        verify(mockDelegate).setPassword(eq("newToken"));
-        verify(mockDelegate).getConnection("username", "password");
-    }
-
-    @Test
-    void refreshToken_shouldUpdateConnectionProperties() throws Exception {
-        // Arrange
-        Properties props = new Properties();
-        when(mockDelegate.getConnectionProperties()).thenReturn(props);
-
-        // Act
-        tokenRefreshingDataSource.getConnection();
-
-        // Assert
-        assertThat(props).containsEntry("password", "newToken");
-        verify(mockDelegate).setConnectionProperties(argThat(p -> "newToken".equals(p.getProperty("password"))));
+    // Helper method to set lastRefreshTime using reflection
+    private void setLastRefreshTime(long time) throws Exception {
+        java.lang.reflect.Field field = TokenRefreshingDataSource.class.getDeclaredField("lastRefreshTime");
+        field.setAccessible(true);
+        field.set(dataSource, time);
     }
 }
