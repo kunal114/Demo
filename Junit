@@ -27,13 +27,21 @@ class TokenRefreshingDataSourceTest {
     private TokenRefreshingDataSource dataSource;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws SQLException {
         when(mockDelegate.getUrl()).thenReturn("jdbc:mysql://localhost:3306/testdb");
         when(mockDelegate.getUsername()).thenReturn("testuser");
         when(mockDelegate.getPassword()).thenReturn("initialPassword");
         when(mockDelegate.getConnectionProperties()).thenReturn(new Properties());
+        
+        // Mock the superclass behavior
+        doReturn(mockConnection).when(mockDelegate).getConnection();
+        doReturn(mockConnection).when(mockDelegate).getConnection(anyString(), anyString());
 
-        dataSource = new TokenRefreshingDataSource(mockDelegate, mockEpvConfigVSI, mockAwsRdsDbPasswordFetch);
+        dataSource = spy(new TokenRefreshingDataSource(mockDelegate, mockEpvConfigVSI, mockAwsRdsDbPasswordFetch));
+        
+        // Mock the superclass behavior for the spy
+        doReturn(mockConnection).when(dataSource).super$getConnection();
+        doReturn(mockConnection).when(dataSource).super$getConnection(anyString(), anyString());
     }
 
     @Test
@@ -45,8 +53,6 @@ class TokenRefreshingDataSourceTest {
 
     @Test
     void testGetConnectionWithoutRefresh() throws SQLException, Exception {
-        when(mockDelegate.getConnection()).thenReturn(mockConnection);
-
         Connection result = dataSource.getConnection();
 
         assertSame(mockConnection, result);
@@ -56,7 +62,6 @@ class TokenRefreshingDataSourceTest {
 
     @Test
     void testGetConnectionWithRefresh() throws SQLException, Exception {
-        when(mockDelegate.getConnection()).thenReturn(mockConnection);
         when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
         when(mockAwsRdsDbPasswordFetch.getAuthToken(any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()))
             .thenReturn("newToken");
@@ -73,13 +78,11 @@ class TokenRefreshingDataSourceTest {
     }
 
     @Test
-    void testGetConnectionWithUsernameAndPassword() throws SQLException, Exception {
-        when(mockDelegate.getConnection(anyString(), anyString())).thenReturn(mockConnection);
-
+    void testGetConnectionWithUsernameAndPassword() throws SQLException {
         Connection result = dataSource.getConnection("user", "pass");
 
         assertSame(mockConnection, result);
-        verify(mockDelegate).getConnection("user", "pass");
+        verify(dataSource).super$getConnection("user", "pass");
     }
 
     @Test
