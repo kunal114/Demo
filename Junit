@@ -1,31 +1,107 @@
-@Test
-void testGetConnectionWithRefresh() throws SQLException, Exception {
-    // Arrange
-    when(mockDelegate.getConnection()).thenReturn(mockConnection);
-    when(mockEpvConfigVSI.retrieveEpvPasswordForAwsRds()).thenReturn("fidpss");
-    when(mockAwsRdsDbPasswordFetch.getAuthToken(
-        any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()
-    )).thenReturn("newToken");
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.RestTemplate;
 
-    // Set lastRefreshTime to more than 14 minutes ago
-    setLastRefreshTime(System.currentTimeMillis() - 900000);
+import java.io.FileInputStream;
+import java.security.KeyStore;
 
-    // Act
-    Connection result = dataSource.getConnection();
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-    // Assert
-    assertSame(mockConnection, result);
-    verify(mockEpvConfigVSI, times(1)).retrieveEpvPasswordForAwsRds();
-    verify(mockAwsRdsDbPasswordFetch, times(1)).getAuthToken(
-        any(), any(), any(), any(), any(), eq("fidpss"), any(), any(), any(), any(), anyBoolean()
-    );
-    assertEquals("newToken", dataSource.getPassword());
-    assertEquals("newToken", dataSource.getConnectionProperties().getProperty("password"));
-}
+@ExtendWith(MockitoExtension.class)
+class RestTemplateProviderTest {
 
-// Add this method to your test class if it's not already there
-private void setLastRefreshTime(long time) throws Exception {
-    java.lang.reflect.Field field = TokenRefreshingDataSource.class.getDeclaredField("lastRefreshTime");
-    field.setAccessible(true);
-    field.set(dataSource, time);
+    @Mock
+    private KeyStore mockKeyStore;
+
+    @Mock
+    private FileInputStream mockFileInputStream;
+
+    private RestTemplateProvider restTemplateProvider;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        restTemplateProvider = new RestTemplateProvider();
+        restTemplateProvider.setKeystorePath("path/to/keystore.jks");
+    }
+
+    @Test
+    void testGetRestTemplate_Success() throws Exception {
+        // Mocking necessary dependencies
+        mockStatic(KeyStore.class);
+        when(KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
+
+        // Test
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assertions
+        assertNotNull(result);
+        assertTrue(result.getMessageConverters().stream()
+                .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter));
+        assertTrue(result.getMessageConverters().stream()
+                .anyMatch(converter -> converter instanceof StringHttpMessageConverter));
+    }
+
+    @Test
+    void testGetRestTemplate_IOExceptionHandling() throws Exception {
+        // Mocking necessary dependencies
+        mockStatic(KeyStore.class);
+        when(KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
+        doThrow(new IOException("Test IO Exception")).when(mockKeyStore).load(any(), any());
+
+        // Test
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assertions
+        assertNull(result);
+        // Verify that error was logged (you might need to mock your logger)
+    }
+
+    @Test
+    void testGetRestTemplate_NoSuchAlgorithmExceptionHandling() throws Exception {
+        // Mocking necessary dependencies
+        mockStatic(KeyStore.class);
+        when(KeyStore.getInstance("JKS")).thenThrow(new NoSuchAlgorithmException("Test Algorithm Exception"));
+
+        // Test
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assertions
+        assertNull(result);
+        // Verify that error was logged (you might need to mock your logger)
+    }
+
+    @Test
+    void testGetRestTemplate_CertificateExceptionHandling() throws Exception {
+        // Mocking necessary dependencies
+        mockStatic(KeyStore.class);
+        when(KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
+        doThrow(new CertificateException("Test Certificate Exception")).when(mockKeyStore).load(any(), any());
+
+        // Test
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assertions
+        assertNull(result);
+        // Verify that error was logged (you might need to mock your logger)
+    }
+
+    @Test
+    void testGetRestTemplate_GeneralExceptionHandling() throws Exception {
+        // Mocking necessary dependencies
+        mockStatic(KeyStore.class);
+        when(KeyStore.getInstance("JKS")).thenThrow(new RuntimeException("Test General Exception"));
+
+        // Test
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assertions
+        assertNull(result);
+        // Verify that error was logged (you might need to mock your logger)
+    }
 }
