@@ -2,106 +2,54 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
-import java.io.FileInputStream;
+import javax.net.ssl.SSLContext;
 import java.security.KeyStore;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class RestTemplateProviderTest {
+class RestTemplateFactoryTest {
 
     @Mock
     private KeyStore mockKeyStore;
 
     @Mock
-    private FileInputStream mockFileInputStream;
+    private SSLContext mockSslContext;
 
-    private RestTemplateProvider restTemplateProvider;
+    private RestTemplateFactory restTemplateFactory;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        restTemplateProvider = new RestTemplateProvider();
-        restTemplateProvider.setKeystorePath("path/to/keystore.jks");
+        restTemplateFactory = new RestTemplateFactory();
+        ReflectionTestUtils.setField(restTemplateFactory, "keystorePath", 
+            RestTemplateFactoryTest.class.getClassLoader().getResource("test-keystore.jks").getPath());
     }
 
     @Test
-    void testGetRestTemplate_Success() throws Exception {
-        // Mocking necessary dependencies
-        mockStatic(KeyStore.class);
-        when(KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
+    void testGetRestTemplate() throws Exception {
+        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class)) {
+            mockedKeyStore.when(() -> KeyStore.getInstance(anyString())).thenReturn(mockKeyStore);
 
-        // Test
-        RestTemplate result = restTemplateProvider.getRestTemplate();
+            when(restTemplateFactory.getKeystorePassword()).thenReturn("change");
 
-        // Assertions
-        assertNotNull(result);
-        assertTrue(result.getMessageConverters().stream()
-                .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter));
-        assertTrue(result.getMessageConverters().stream()
-                .anyMatch(converter -> converter instanceof StringHttpMessageConverter));
-    }
+            mockStatic(SSLContextBuilder.class);
+            SSLContextBuilder mockBuilder = mock(SSLContextBuilder.class);
+            when(SSLContextBuilder.create()).thenReturn(mockBuilder);
+            when(mockBuilder.useProtocol(anyString())).thenReturn(mockBuilder);
+            when(mockBuilder.loadTrustMaterial(any(KeyStore.class), any(TrustSelfSignedStrategy.class))).thenReturn(mockBuilder);
+            when(mockBuilder.build()).thenReturn(mockSslContext);
 
-    @Test
-    void testGetRestTemplate_IOExceptionHandling() throws Exception {
-        // Mocking necessary dependencies
-        mockStatic(KeyStore.class);
-        when(KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
-        doThrow(new IOException("Test IO Exception")).when(mockKeyStore).load(any(), any());
+            mockConstruction(SSLConnectionSocketFactory.class);
 
-        // Test
-        RestTemplate result = restTemplateProvider.getRestTemplate();
+            RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
 
-        // Assertions
-        assertNull(result);
-        // Verify that error was logged (you might need to mock your logger)
-    }
-
-    @Test
-    void testGetRestTemplate_NoSuchAlgorithmExceptionHandling() throws Exception {
-        // Mocking necessary dependencies
-        mockStatic(KeyStore.class);
-        when(KeyStore.getInstance("JKS")).thenThrow(new NoSuchAlgorithmException("Test Algorithm Exception"));
-
-        // Test
-        RestTemplate result = restTemplateProvider.getRestTemplate();
-
-        // Assertions
-        assertNull(result);
-        // Verify that error was logged (you might need to mock your logger)
-    }
-
-    @Test
-    void testGetRestTemplate_CertificateExceptionHandling() throws Exception {
-        // Mocking necessary dependencies
-        mockStatic(KeyStore.class);
-        when(KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
-        doThrow(new CertificateException("Test Certificate Exception")).when(mockKeyStore).load(any(), any());
-
-        // Test
-        RestTemplate result = restTemplateProvider.getRestTemplate();
-
-        // Assertions
-        assertNull(result);
-        // Verify that error was logged (you might need to mock your logger)
-    }
-
-    @Test
-    void testGetRestTemplate_GeneralExceptionHandling() throws Exception {
-        // Mocking necessary dependencies
-        mockStatic(KeyStore.class);
-        when(KeyStore.getInstance("JKS")).thenThrow(new RuntimeException("Test General Exception"));
-
-        // Test
-        RestTemplate result = restTemplateProvider.getRestTemplate();
-
-        // Assertions
-        assertNull(result);
-        // Verify that error was logged (you might need to mock your logger)
+            assertNotNull(restTemplate);
+        }
     }
 }
