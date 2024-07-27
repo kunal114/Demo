@@ -1,68 +1,77 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.client.RestTemplate;
 
-import java.text.ParseException;
+import javax.net.ssl.SSLContext;
+import java.io.FileInputStream;
+import java.security.KeyStore;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.ArgumentMatchers.*;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class OptionsLookupServiceTest {
+@ExtendWith(MockitoExtension.class)
+class RestTemplateProviderTest {
 
     @Mock
-    private DataSourceConfig dataSourceConfig;
+    private SecureCredential secureCredential;
 
     @Mock
-    private JdbcTemplate jdbcTemplate;
+    private KeyStore keyStore;
 
-    @InjectMocks
-    private OptionsLookupService optionsLookupService;
+    @Mock
+    private SSLContext sslContext;
+
+    @Mock
+    private FileInputStream fileInputStream;
+
+    private RestTemplateProvider restTemplateProvider;
 
     @BeforeEach
     void setUp() {
-        MockitoAnnotations.openMocks(this);
-        when(dataSourceConfig.db2TM()).thenReturn(mock(DataSource.class));
-        when(dataSourceConfig.db2TMJdbcTemplate(any())).thenReturn(jdbcTemplate);
+        restTemplateProvider = new RestTemplateProvider();
+        restTemplateProvider.setKeyStorePath("path/to/keystore");
     }
 
     @Test
-    void getSecurityIdentifier_shouldReturnCorrectIdentifier() throws ParseException {
+    void testGetRestTemplate_SuccessfulCreation() throws Exception {
         // Arrange
-        String symbol = "AAPL";
-        String side = "CALL";
-        String expDate = "2023-12-15";
-        String strikePrice = "150.00";
-        String expectedIdentifier = "AAPL231215C00150000";
-
-        when(jdbcTemplate.queryForObject(anyString(), eq(String.class), any(Object[].class)))
-            .thenReturn(expectedIdentifier);
-
+        when(secureCredential.getKeystorePassword()).thenReturn("password");
+        when(KeyStore.getInstance("JKS")).thenReturn(keyStore);
+        
         // Act
-        String result = optionsLookupService.getSecurityIdentifier(symbol, side, expDate, strikePrice);
+        RestTemplate result = restTemplateProvider.getRestTemplate();
 
         // Assert
-        assertEquals(expectedIdentifier, result);
-        verify(jdbcTemplate).setMaxRows(anyInt());
-        verify(jdbcTemplate).queryForObject(eq(OptionsLookupSql.GetSecurityIdentifierSql), 
-                                            eq(String.class), 
-                                            eq(new Object[]{symbol, side, expDate, strikePrice}));
+        assertNotNull(result);
+        assertEquals(2, result.getMessageConverters().size());
     }
 
     @Test
-    void getSecurityIdentifier_shouldThrowParseException_whenInvalidDateFormat() {
+    void testGetRestTemplate_ExceptionDuringCreation() throws Exception {
         // Arrange
-        String symbol = "AAPL";
-        String side = "CALL";
-        String expDate = "invalid-date";
-        String strikePrice = "150.00";
+        when(secureCredential.getKeystorePassword()).thenReturn("password");
+        when(KeyStore.getInstance("JKS")).thenThrow(new Exception("Keystore error"));
 
-        // Act & Assert
-        assertThrows(ParseException.class, () -> 
-            optionsLookupService.getSecurityIdentifier(symbol, side, expDate, strikePrice)
-        );
+        // Act
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assert
+        assertNotNull(result);
+        assertEquals(0, result.getMessageConverters().size());
+    }
+
+    @Test
+    void testGetRestTemplate_NullRestTemplateCreation() throws Exception {
+        // Arrange
+        when(secureCredential.getKeystorePassword()).thenThrow(new RuntimeException("Password error"));
+
+        // Act
+        RestTemplate result = restTemplateProvider.getRestTemplate();
+
+        // Assert
+        assertNull(result);
     }
 }
