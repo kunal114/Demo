@@ -1,48 +1,68 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
+import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.text.ParseException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
-class SecurityRowMapperTest {
+class OptionsLookupServiceTest {
 
     @Mock
-    private ResultSet resultSet;
+    private DataSourceConfig dataSourceConfig;
 
-    private SecurityRowMapper rowMapper;
+    @Mock
+    private JdbcTemplate jdbcTemplate;
+
+    @InjectMocks
+    private OptionsLookupService optionsLookupService;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        rowMapper = new SecurityRowMapper();
+        when(dataSourceConfig.db2TM()).thenReturn(mock(DataSource.class));
+        when(dataSourceConfig.db2TMJdbcTemplate(any())).thenReturn(jdbcTemplate);
     }
 
     @Test
-    void mapRow_withNonNullValue_shouldReturnTrimmedValue() throws SQLException {
+    void getSecurityIdentifier_shouldReturnCorrectIdentifier() throws ParseException {
         // Arrange
-        when(resultSet.getString("SECURITY_ADP_NBR")).thenReturn("  123ABC  ");
+        String symbol = "AAPL";
+        String side = "CALL";
+        String expDate = "2023-12-15";
+        String strikePrice = "150.00";
+        String expectedIdentifier = "AAPL231215C00150000";
+
+        when(jdbcTemplate.queryForObject(anyString(), eq(String.class), any(Object[].class)))
+            .thenReturn(expectedIdentifier);
 
         // Act
-        String result = rowMapper.mapRow(resultSet, 1);
+        String result = optionsLookupService.getSecurityIdentifier(symbol, side, expDate, strikePrice);
 
         // Assert
-        assertEquals("123ABC", result);
+        assertEquals(expectedIdentifier, result);
+        verify(jdbcTemplate).setMaxRows(anyInt());
+        verify(jdbcTemplate).queryForObject(eq(OptionsLookupSql.GetSecurityIdentifierSql), 
+                                            eq(String.class), 
+                                            eq(new Object[]{symbol, side, expDate, strikePrice}));
     }
 
     @Test
-    void mapRow_withNullValue_shouldReturnEmptyString() throws SQLException {
+    void getSecurityIdentifier_shouldThrowParseException_whenInvalidDateFormat() {
         // Arrange
-        when(resultSet.getString("SECURITY_ADP_NBR")).thenReturn(null);
+        String symbol = "AAPL";
+        String side = "CALL";
+        String expDate = "invalid-date";
+        String strikePrice = "150.00";
 
-        // Act
-        String result = rowMapper.mapRow(resultSet, 1);
-
-        // Assert
-        assertEquals("", result);
+        // Act & Assert
+        assertThrows(ParseException.class, () -> 
+            optionsLookupService.getSecurityIdentifier(symbol, side, expDate, strikePrice)
+        );
     }
 }
