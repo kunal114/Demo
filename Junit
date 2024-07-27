@@ -1,55 +1,83 @@
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
 
-import javax.net.ssl.SSLContext;
-import java.security.KeyStore;
+import java.math.BigDecimal;
+import java.util.*;
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-@ExtendWith(MockitoExtension.class)
-class RestTemplateFactoryTest {
+class ExcelGeneratorTest {
 
-    @Mock
-    private KeyStore mockKeyStore;
-
-    @Mock
-    private SSLContext mockSslContext;
-
-    private RestTemplateFactory restTemplateFactory;
+    private ExcelGenerator excelGenerator;
+    private Map<Integer, Object[]> testData;
 
     @BeforeEach
     void setUp() {
-        restTemplateFactory = new RestTemplateFactory();
-        ReflectionTestUtils.setField(restTemplateFactory, "keystorePath", 
-            RestTemplateFactoryTest.class.getClassLoader().getResource("test-keystore.jks").getPath());
+        excelGenerator = new ExcelGenerator();
+        testData = new HashMap<>();
+        // Setup test data
+        testData.put(0, new Object[]{"Date", "Price", "Quantity", "Boolean", "String", "Double", "Long"});
+        testData.put(1, new Object[]{new Date(), new BigDecimal("10.50"), new BigDecimal("100"), true, "Test", 15.75, 1000L});
     }
 
     @Test
-    void testGetRestTemplate() throws Exception {
-        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class)) {
-            mockedKeyStore.when(() -> KeyStore.getInstance(anyString())).thenReturn(mockKeyStore);
+    void testGetExcel() {
+        Workbook workbook = excelGenerator.getExcel(testData);
+        
+        assertNotNull(workbook);
+        assertEquals(1, workbook.getNumberOfSheets());
+        
+        Sheet sheet = workbook.getSheetAt(0);
+        assertEquals("trades", sheet.getSheetName());
+        
+        assertEquals(2, sheet.getPhysicalNumberOfRows());
+        
+        // Test header row
+        Row headerRow = sheet.getRow(0);
+        assertEquals("Date", headerRow.getCell(0).getStringCellValue());
+        assertEquals("Price", headerRow.getCell(1).getStringCellValue());
+        assertEquals("Quantity", headerRow.getCell(2).getStringCellValue());
+        
+        // Test data row
+        Row dataRow = sheet.getRow(1);
+        assertTrue(dataRow.getCell(0).getStringCellValue().matches("\\d{2}/\\d{2}/\\d{4}"));
+        assertEquals(10.50, dataRow.getCell(1).getNumericCellValue(), 0.001);
+        assertEquals(100.0, dataRow.getCell(2).getNumericCellValue(), 0.001);
+        assertTrue(dataRow.getCell(3).getBooleanCellValue());
+        assertEquals("Test", dataRow.getCell(4).getStringCellValue());
+        assertEquals(15.75, dataRow.getCell(5).getNumericCellValue(), 0.001);
+        assertEquals(1000L, (long)dataRow.getCell(6).getNumericCellValue());
+    }
 
-            when(restTemplateFactory.getKeystorePassword()).thenReturn("change");
+    @Test
+    void testEmptyData() {
+        Map<Integer, Object[]> emptyData = new HashMap<>();
+        Workbook workbook = excelGenerator.getExcel(emptyData);
+        
+        assertNotNull(workbook);
+        assertEquals(1, workbook.getNumberOfSheets());
+        Sheet sheet = workbook.getSheetAt(0);
+        assertEquals(0, sheet.getPhysicalNumberOfRows());
+    }
 
-            mockStatic(SSLContextBuilder.class);
-            SSLContextBuilder mockBuilder = mock(SSLContextBuilder.class);
-            when(SSLContextBuilder.create()).thenReturn(mockBuilder);
-            when(mockBuilder.useProtocol(anyString())).thenReturn(mockBuilder);
-            when(mockBuilder.loadTrustMaterial(any(KeyStore.class), any(TrustSelfSignedStrategy.class))).thenReturn(mockBuilder);
-            when(mockBuilder.build()).thenReturn(mockSslContext);
-
-            mockConstruction(SSLConnectionSocketFactory.class);
-
-            RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
-
-            assertNotNull(restTemplate);
-        }
+    @Test
+    void testCellStyles() {
+        Workbook workbook = excelGenerator.getExcel(testData);
+        Sheet sheet = workbook.getSheetAt(0);
+        
+        // Test header cell style
+        CellStyle headerStyle = sheet.getRow(0).getCell(0).getCellStyle();
+        assertTrue(headerStyle.getWrapText());
+        assertEquals(BorderStyle.THIN, headerStyle.getBorderBottomEnum());
+        assertEquals(BorderStyle.THIN, headerStyle.getBorderRightEnum());
+        assertTrue(headerStyle.getFont(workbook).getBold());
+        
+        // Test data cell style
+        CellStyle dataStyle = sheet.getRow(1).getCell(0).getCellStyle();
+        assertTrue(dataStyle.getWrapText());
+        assertEquals(BorderStyle.THIN, dataStyle.getBorderBottomEnum());
+        assertEquals(BorderStyle.THIN, dataStyle.getBorderRightEnum());
     }
 }
