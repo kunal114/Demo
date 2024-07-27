@@ -1,76 +1,62 @@
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.web.client.RestTemplate;
+@Test
+    public void testSaveInstructions_focusOnGetRestTemplate() {
+        try {
+            // Setup
+            OptionsLookupService optionsLookupService = new OptionsLookupService();
+            BPTrade bpTrade = getBpTrade();
 
-import java.lang.reflect.Method;
-import java.security.KeyStore;
+            // Set necessary fields using reflection
+            setPrivateField(optionsLookupService, "keyStorePath", "test/xyz");
+            setPrivateField(optionsLookupService, "dk.JanusUser", "testUser");
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+            // Mock SecureCredential to return a known password
+            SecureCredential mockSecureCredential = mock(SecureCredential.class);
+            when(mockSecureCredential.getKeyStorePassword()).thenReturn("testPassword");
+            setPrivateField(optionsLookupService, "secureCredential", mockSecureCredential);
 
-@ExtendWith(MockitoExtension.class)
-class YourClassTest {
+            // Spy on the optionsLookupService to verify RestTemplate creation
+            OptionsLookupService spyService = Mockito.spy(optionsLookupService);
 
-    @Mock
-    private SecureCredential secureCredential;
+            // Execute
+            String result = spyService.saveInstructions(bpTrade, "");
 
-    private YourClass yourClass;
-    private Method getRestTemplateMethod;
+            // Verify
+            verify(spyService).getRestTemplate();
+            
+            // Additional verifications
+            RestTemplate restTemplate = (RestTemplate) getPrivateField(spyService, "restTemplate");
+            assertNotNull(restTemplate, "RestTemplate should be created");
+            
+            // You can add more specific assertions here about the RestTemplate
+            // For example, checking if it has the expected message converters:
+            assertTrue(restTemplate.getMessageConverters().stream()
+                .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter),
+                "RestTemplate should have MappingJackson2HttpMessageConverter");
+            assertTrue(restTemplate.getMessageConverters().stream()
+                .anyMatch(converter -> converter instanceof StringHttpMessageConverter),
+                "RestTemplate should have StringHttpMessageConverter");
 
-    @BeforeEach
-    void setUp() throws NoSuchMethodException {
-        yourClass = new YourClass(secureCredential);
-        yourClass.setKeyStorePath("path/to/keystore.jks");
+            // Assert the result of saveInstructions if needed
+            assertNotNull(result, "saveInstructions should return a non-null result");
 
-        // Use reflection to make the private method accessible
-        getRestTemplateMethod = YourClass.class.getDeclaredMethod("getRestTemplate");
-        getRestTemplateMethod.setAccessible(true);
-    }
-
-    @Test
-    void getRestTemplate_withValidKeyStore_returnsRestTemplate() throws Exception {
-        // Arrange
-        when(secureCredential.getKeyStorePassword()).thenReturn("password");
-        
-        // Mock KeyStore
-        KeyStore mockKeyStore = mock(KeyStore.class);
-        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class)) {
-            mockedKeyStore.when(() -> KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
-
-            // Act
-            RestTemplate result = (RestTemplate) getRestTemplateMethod.invoke(yourClass);
-
-            // Assert
-            assertNotNull(result);
-            // Add more specific assertions based on your RestTemplate configuration
+        } catch (Exception e) {
+            fail("Test failed due to exception: " + e.getMessage());
         }
     }
 
-    @Test
-    void getRestTemplate_withInvalidKeyStore_returnsRestTemplateWithoutSSL() throws Exception {
-        // Arrange
-        when(secureCredential.getKeyStorePassword()).thenReturn("invalid_password");
-
-        // Act
-        RestTemplate result = (RestTemplate) getRestTemplateMethod.invoke(yourClass);
-
-        // Assert
-        assertNotNull(result);
-        // Add assertions to verify it's a RestTemplate without SSL configuration
+    private void setPrivateField(Object object, String fieldName, Object value) throws Exception {
+        Field field = object.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        field.set(object, value);
     }
 
-    @Test
-    void getRestTemplate_withException_returnsNull() throws Exception {
-        // Arrange
-        when(secureCredential.getKeyStorePassword()).thenThrow(new RuntimeException("Test exception"));
-
-        // Act
-        RestTemplate result = (RestTemplate) getRestTemplateMethod.invoke(yourClass);
-
-        // Assert
-        assertNull(result);
+    private Object getPrivateField(Object object, String fieldName) throws Exception {
+        Field field = object.getClass().getDeclaredField(fieldName);
+        field.setAccessible(true);
+        return field.get(object);
     }
-}
+
+    private BPTrade getBpTrade() {
+        // Implementation to create and return a BPTrade object
+        return new BPTrade();
+    }
