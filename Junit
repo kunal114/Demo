@@ -5,7 +5,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.client.RestTemplate;
 
-import javax.net.ssl.SSLContext;
 import java.io.FileInputStream;
 import java.security.KeyStore;
 
@@ -13,50 +12,51 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class RestTemplateProviderTest {
+class YourClassTest {
 
     @Mock
     private SecureCredential secureCredential;
 
-    @Mock
-    private KeyStore keyStore;
-
-    @Mock
-    private SSLContext sslContext;
-
-    @Mock
-    private FileInputStream fileInputStream;
-
-    private RestTemplateProvider restTemplateProvider;
+    private YourClass yourClass;
 
     @BeforeEach
     void setUp() {
-        restTemplateProvider = new RestTemplateProvider();
-        restTemplateProvider.setKeyStorePath("path/to/keystore");
+        yourClass = new YourClass(secureCredential);
+        yourClass.setKeyStorePath("path/to/keystore.jks");
     }
 
     @Test
-    void testGetRestTemplate_SuccessfulCreation() throws Exception {
+    void getRestTemplate_withValidKeyStore_returnsRestTemplate() throws Exception {
         // Arrange
-        when(secureCredential.getKeystorePassword()).thenReturn("password");
-        when(KeyStore.getInstance("JKS")).thenReturn(keyStore);
+        when(secureCredential.getKeyStorePassword()).thenReturn("password");
         
-        // Act
-        RestTemplate result = restTemplateProvider.getRestTemplate();
+        // Mock KeyStore and FileInputStream
+        KeyStore mockKeyStore = mock(KeyStore.class);
+        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class)) {
+            mockedKeyStore.when(() -> KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
+            
+            try (MockedStatic<FileInputStream> mockedFileInputStream = mockStatic(FileInputStream.class)) {
+                FileInputStream mockFileInputStream = mock(FileInputStream.class);
+                mockedFileInputStream.whenNew(FileInputStream.class).withAnyArguments().thenReturn(mockFileInputStream);
 
-        // Assert
-        assertNotNull(result);
-        assertEquals(2, result.getMessageConverters().size());
+                // Act
+                RestTemplate result = yourClass.getRestTemplate();
+
+                // Assert
+                assertNotNull(result);
+                assertEquals(2, result.getMessageConverters().size());
+                verify(mockKeyStore).load(any(FileInputStream.class), any(char[].class));
+            }
+        }
     }
 
     @Test
-    void testGetRestTemplate_ExceptionDuringCreation() throws Exception {
+    void getRestTemplate_withInvalidKeyStore_returnsRestTemplateWithoutSSL() throws Exception {
         // Arrange
-        when(secureCredential.getKeystorePassword()).thenReturn("password");
-        when(KeyStore.getInstance("JKS")).thenThrow(new Exception("Keystore error"));
+        when(secureCredential.getKeyStorePassword()).thenReturn("invalid_password");
 
         // Act
-        RestTemplate result = restTemplateProvider.getRestTemplate();
+        RestTemplate result = yourClass.getRestTemplate();
 
         // Assert
         assertNotNull(result);
@@ -64,12 +64,12 @@ class RestTemplateProviderTest {
     }
 
     @Test
-    void testGetRestTemplate_NullRestTemplateCreation() throws Exception {
+    void getRestTemplate_withException_returnsNull() throws Exception {
         // Arrange
-        when(secureCredential.getKeystorePassword()).thenThrow(new RuntimeException("Password error"));
+        when(secureCredential.getKeyStorePassword()).thenThrow(new RuntimeException("Test exception"));
 
         // Act
-        RestTemplate result = restTemplateProvider.getRestTemplate();
+        RestTemplate result = yourClass.getRestTemplate();
 
         // Assert
         assertNull(result);
