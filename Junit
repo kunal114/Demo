@@ -1,83 +1,48 @@
-import org.apache.poi.ss.usermodel.*;
-import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
-import java.math.BigDecimal;
-import java.util.*;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.when;
 
-class ExcelGeneratorTest {
+class SecurityRowMapperTest {
 
-    private ExcelGenerator excelGenerator;
-    private Map<Integer, Object[]> testData;
+    @Mock
+    private ResultSet resultSet;
+
+    private SecurityRowMapper rowMapper;
 
     @BeforeEach
     void setUp() {
-        excelGenerator = new ExcelGenerator();
-        testData = new HashMap<>();
-        // Setup test data
-        testData.put(0, new Object[]{"Date", "Price", "Quantity", "Boolean", "String", "Double", "Long"});
-        testData.put(1, new Object[]{new Date(), new BigDecimal("10.50"), new BigDecimal("100"), true, "Test", 15.75, 1000L});
+        MockitoAnnotations.openMocks(this);
+        rowMapper = new SecurityRowMapper();
     }
 
     @Test
-    void testGetExcel() {
-        Workbook workbook = excelGenerator.getExcel(testData);
-        
-        assertNotNull(workbook);
-        assertEquals(1, workbook.getNumberOfSheets());
-        
-        Sheet sheet = workbook.getSheetAt(0);
-        assertEquals("trades", sheet.getSheetName());
-        
-        assertEquals(2, sheet.getPhysicalNumberOfRows());
-        
-        // Test header row
-        Row headerRow = sheet.getRow(0);
-        assertEquals("Date", headerRow.getCell(0).getStringCellValue());
-        assertEquals("Price", headerRow.getCell(1).getStringCellValue());
-        assertEquals("Quantity", headerRow.getCell(2).getStringCellValue());
-        
-        // Test data row
-        Row dataRow = sheet.getRow(1);
-        assertTrue(dataRow.getCell(0).getStringCellValue().matches("\\d{2}/\\d{2}/\\d{4}"));
-        assertEquals(10.50, dataRow.getCell(1).getNumericCellValue(), 0.001);
-        assertEquals(100.0, dataRow.getCell(2).getNumericCellValue(), 0.001);
-        assertTrue(dataRow.getCell(3).getBooleanCellValue());
-        assertEquals("Test", dataRow.getCell(4).getStringCellValue());
-        assertEquals(15.75, dataRow.getCell(5).getNumericCellValue(), 0.001);
-        assertEquals(1000L, (long)dataRow.getCell(6).getNumericCellValue());
+    void mapRow_withNonNullValue_shouldReturnTrimmedValue() throws SQLException {
+        // Arrange
+        when(resultSet.getString("SECURITY_ADP_NBR")).thenReturn("  123ABC  ");
+
+        // Act
+        String result = rowMapper.mapRow(resultSet, 1);
+
+        // Assert
+        assertEquals("123ABC", result);
     }
 
     @Test
-    void testEmptyData() {
-        Map<Integer, Object[]> emptyData = new HashMap<>();
-        Workbook workbook = excelGenerator.getExcel(emptyData);
-        
-        assertNotNull(workbook);
-        assertEquals(1, workbook.getNumberOfSheets());
-        Sheet sheet = workbook.getSheetAt(0);
-        assertEquals(0, sheet.getPhysicalNumberOfRows());
-    }
+    void mapRow_withNullValue_shouldReturnEmptyString() throws SQLException {
+        // Arrange
+        when(resultSet.getString("SECURITY_ADP_NBR")).thenReturn(null);
 
-    @Test
-    void testCellStyles() {
-        Workbook workbook = excelGenerator.getExcel(testData);
-        Sheet sheet = workbook.getSheetAt(0);
-        
-        // Test header cell style
-        CellStyle headerStyle = sheet.getRow(0).getCell(0).getCellStyle();
-        assertTrue(headerStyle.getWrapText());
-        assertEquals(BorderStyle.THIN, headerStyle.getBorderBottomEnum());
-        assertEquals(BorderStyle.THIN, headerStyle.getBorderRightEnum());
-        assertTrue(headerStyle.getFont(workbook).getBold());
-        
-        // Test data cell style
-        CellStyle dataStyle = sheet.getRow(1).getCell(0).getCellStyle();
-        assertTrue(dataStyle.getWrapText());
-        assertEquals(BorderStyle.THIN, dataStyle.getBorderBottomEnum());
-        assertEquals(BorderStyle.THIN, dataStyle.getBorderRightEnum());
+        // Act
+        String result = rowMapper.mapRow(resultSet, 1);
+
+        // Assert
+        assertEquals("", result);
     }
 }
