@@ -38,9 +38,7 @@ class RequestWrapperFilterTest {
 
     @Test
     void testDoFilter_withHttpServletRequest() throws IOException, ServletException {
-        // Given: servletRequest is an instance of HttpServletRequest
-        when(servletRequest instanceof HttpServletRequest).thenReturn(true);
-
+        // Given: HttpServletRequest instance
         // When: doFilter is called
         filter.doFilter(httpServletRequest, servletResponse, filterChain);
 
@@ -53,9 +51,7 @@ class RequestWrapperFilterTest {
 
     @Test
     void testDoFilter_withoutHttpServletRequest() throws IOException, ServletException {
-        // Given: servletRequest is not an instance of HttpServletRequest
-        when(servletRequest instanceof HttpServletRequest).thenReturn(false);
-
+        // Given: Non-HttpServletRequest instance
         // When: doFilter is called
         filter.doFilter(servletRequest, servletResponse, filterChain);
 
