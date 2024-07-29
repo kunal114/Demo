@@ -1,44 +1,65 @@
-@Test
-    void testDoFilterInternal_ServletException() throws IOException {
-        byte[] cachedFileBytes = new byte[0];
-        ByteArrayInputStream bais = new ByteArrayInputStream(cachedFileBytes);
-        when(request.getInputStream()).thenReturn(new DelegatingServletInputStream(bais));
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
+import org.springframework.web.client.RestTemplate;
 
-        ServletException servletException = new ServletException("Simulated ServletException");
-        doThrow(servletException).when(filterChain).doFilter(any(), any());
+import java.io.FileInputStream;
+import java.io.IOException;
+import java.security.KeyStore;
 
-        assertThrows(ServletException.class, () -> {
-            fileUploadFilter.doFilterInternal(request, response, filterChain);
-        });
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-        verify(log).error(eq("Error while uploading request"), eq(servletException));
+@ExtendWith(MockitoExtension.class)
+public class RestTemplateFactoryTest {
+
+    @Mock
+    private SecureCredentialConfig secureCredential;
+
+    @InjectMocks
+    private RestTemplateFactory restTemplateFactory;
+
+    @Value("C:/FAST/JDK64/1.7.0.79/jre/lib/security/cacerts")
+    private String keyStorePath;
+
+    @BeforeEach
+    public void setUp() {
+        when(secureCredential.getKeystorePassword()).thenReturn("password");
     }
 
-    // A utility class to wrap ByteArrayInputStream as ServletInputStream
-    static class DelegatingServletInputStream extends ServletInputStream {
-        private final ByteArrayInputStream bais;
+    @Test
+    public void testGetRestTemplate() {
+        RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+        assertNotNull(restTemplate, "RestTemplate should not be null");
 
-        public DelegatingServletInputStream(ByteArrayInputStream bais) {
-            this.bais = bais;
-        }
+        HttpComponentsClientHttpRequestFactory requestFactory = 
+            (HttpComponentsClientHttpRequestFactory) restTemplate.getRequestFactory();
 
-        @Override
-        public int read() throws IOException {
-            return bais.read();
-        }
-
-        @Override
-        public boolean isFinished() {
-            return bais.available() == 0;
-        }
-
-        @Override
-        public boolean isReady() {
-            return true;
-        }
-
-        @Override
-        public void setReadListener(jakarta.servlet.ReadListener readListener) {
-            throw new UnsupportedOperationException();
-        }
+        assertNotNull(requestFactory.getHttpClient(), "HttpClient should not be null");
     }
+
+    @Test
+    public void testGetRestTemplateWithInvalidKeystorePath() throws Exception {
+        restTemplateFactory = new RestTemplateFactory();
+        setField(restTemplateFactory, "keyStorePath", "invalid/path");
+        setField(restTemplateFactory, "secureCredential", secureCredential);
+
+        RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+        assertNull(restTemplate, "RestTemplate should be null for invalid keystore path");
+    }
+
+    @Test
+    public void testGetRestTemplateWithInvalidPassword() throws Exception {
+        when(secureCredential.getKeystorePassword()).thenReturn("invalidPassword");
+
+        RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+        assertNull(restTemplate, "RestTemplate should be null for invalid keystore password");
+    }
+}
