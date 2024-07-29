@@ -1,62 +1,70 @@
-@Test
-    public void testSaveInstructions_focusOnGetRestTemplate() {
-        try {
-            // Setup
-            OptionsLookupService optionsLookupService = new OptionsLookupService();
-            BPTrade bpTrade = getBpTrade();
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.web.multipart.support.StandardMultipartHttpServletRequest;
 
-            // Set necessary fields using reflection
-            setPrivateField(optionsLookupService, "keyStorePath", "test/xyz");
-            setPrivateField(optionsLookupService, "dk.JanusUser", "testUser");
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.IOException;
 
-            // Mock SecureCredential to return a known password
-            SecureCredential mockSecureCredential = mock(SecureCredential.class);
-            when(mockSecureCredential.getKeyStorePassword()).thenReturn("testPassword");
-            setPrivateField(optionsLookupService, "secureCredential", mockSecureCredential);
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-            // Spy on the optionsLookupService to verify RestTemplate creation
-            OptionsLookupService spyService = Mockito.spy(optionsLookupService);
+class YourFilterTest {
 
-            // Execute
-            String result = spyService.saveInstructions(bpTrade, "");
+    private TestableYourFilter filter;
 
-            // Verify
-            verify(spyService).getRestTemplate();
-            
-            // Additional verifications
-            RestTemplate restTemplate = (RestTemplate) getPrivateField(spyService, "restTemplate");
-            assertNotNull(restTemplate, "RestTemplate should be created");
-            
-            // You can add more specific assertions here about the RestTemplate
-            // For example, checking if it has the expected message converters:
-            assertTrue(restTemplate.getMessageConverters().stream()
-                .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter),
-                "RestTemplate should have MappingJackson2HttpMessageConverter");
-            assertTrue(restTemplate.getMessageConverters().stream()
-                .anyMatch(converter -> converter instanceof StringHttpMessageConverter),
-                "RestTemplate should have StringHttpMessageConverter");
+    @Mock
+    private FilterChain filterChain;
 
-            // Assert the result of saveInstructions if needed
-            assertNotNull(result, "saveInstructions should return a non-null result");
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        filter = new TestableYourFilter();
+    }
 
-        } catch (Exception e) {
-            fail("Test failed due to exception: " + e.getMessage());
+    // Test subclass to expose the protected method
+    private class TestableYourFilter extends YourFilter {
+        public void testDoFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) 
+                throws ServletException, IOException {
+            super.doFilterInternal(request, response, filterChain);
         }
     }
 
-    private void setPrivateField(Object object, String fieldName, Object value) throws Exception {
-        Field field = object.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        field.set(object, value);
+    @Test
+    void testDoFilterInternal_NonMultipartRequest() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.testDoFilterInternal(request, response, filterChain);
+
+        verify(filterChain).doFilter(request, response);
     }
 
-    private Object getPrivateField(Object object, String fieldName) throws Exception {
-        Field field = object.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        return field.get(object);
+    @Test
+    void testDoFilterInternal_MultipartRequestWithInvalidFile() throws ServletException, IOException {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setContent("some content".getBytes());
+        request.setContentType("multipart/form-data");
+        StandardMultipartHttpServletRequest multipartRequest = new StandardMultipartHttpServletRequest(request);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        // Mock the isUploadedFileSecure method to return false
+        TestableYourFilter spyFilter = spy(filter);
+        doReturn(false).when(spyFilter).isUploadedFileSecure(any(HttpServletRequest.class));
+
+        assertThrows(SecurityException.class, () -> 
+            spyFilter.testDoFilterInternal(multipartRequest, response, filterChain)
+        );
+
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.getStatus());
     }
 
-    private BPTrade getBpTrade() {
-        // Implementation to create and return a BPTrade object
-        return new BPTrade();
-    }
+    // ... other test methods follow the same pattern
+}
