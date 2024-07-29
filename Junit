@@ -1,26 +1,83 @@
-import java.lang.reflect.Method;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.mock.web.MockMultipartHttpServletRequest;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import java.io.IOException;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class YourFilterTest {
-    private YourFilter filter;
-    private Method doFilterInternalMethod;
+
+    private TestableYourFilter filter;
+
+    @Mock
+    private FilterChain filterChain;
 
     @BeforeEach
-    void setUp() throws NoSuchMethodException {
-        filter = new YourFilter();
-        doFilterInternalMethod = YourFilter.class.getDeclaredMethod("doFilterInternal", 
-            HttpServletRequest.class, HttpServletResponse.class, FilterChain.class);
-        doFilterInternalMethod.setAccessible(true);
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        filter = new TestableYourFilter();
+    }
+
+    private class TestableYourFilter extends YourFilter {
+        public void testDoFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) 
+                throws ServletException, IOException {
+            super.doFilterInternal(request, response, filterChain);
+        }
     }
 
     @Test
-    void testDoFilterInternal_NonMultipartRequest() throws Exception {
-        MockHttpServletRequest request = new MockHttpServletRequest();
+    void testDoFilterInternal_MultipartRequestWithUnsafeFile() throws ServletException, IOException {
+        MockMultipartHttpServletRequest request = new MockMultipartHttpServletRequest();
+        MockMultipartFile file = new MockMultipartFile("file", "test.txt", "text/plain", "potentially unsafe content".getBytes());
+        request.addFile(file);
+
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        doFilterInternalMethod.invoke(filter, request, response, filterChain);
+        // We're not mocking isUploadedFileSecure anymore, letting it run naturally
+        assertThrows(SecurityException.class, () -> 
+            filter.testDoFilterInternal(request, response, filterChain)
+        );
 
-        verify(filterChain).doFilter(request, response);
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.getStatus());
+        assertTrue(response.getErrorMessage().contains("AV Scan of uploaded file failed."));
     }
 
-    // Other test methods follow a similar pattern
+    @Test
+    void testDoFilterInternal_MultipartRequestWithSafeFile() throws ServletException, IOException {
+        MockMultipartHttpServletRequest request = new MockMultipartHttpServletRequest();
+        MockMultipartFile file = new MockMultipartFile("file", "safe.txt", "text/plain", "safe content".getBytes());
+        request.addFile(file);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.testDoFilterInternal(request, response, filterChain);
+
+        // Verify that the filter chain was called (indicating the file was considered safe)
+        verify(filterChain).doFilter(any(UploadRequest.class), eq(response));
+    }
+
+    @Test
+    void testDoFilterInternal_MultipartRequestWithInvalidFileExtension() throws ServletException, IOException {
+        MockMultipartHttpServletRequest request = new MockMultipartHttpServletRequest();
+        MockMultipartFile file = new MockMultipartFile("file", "invalid.exe", "application/octet-stream", "invalid content".getBytes());
+        request.addFile(file);
+
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.testDoFilterInternal(request, response, filterChain);
+
+        assertEquals(HttpServletResponse.SC_BAD_REQUEST, response.getStatus());
+        assertTrue(response.getErrorMessage().contains("File upload request is malformed"));
+    }
+
+    // Add more tests for other scenarios...
 }
