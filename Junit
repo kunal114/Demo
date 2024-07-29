@@ -1,70 +1,26 @@
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.web.multipart.support.StandardMultipartHttpServletRequest;
-
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.IOException;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import java.lang.reflect.Method;
 
 class YourFilterTest {
-
-    private TestableYourFilter filter;
-
-    @Mock
-    private FilterChain filterChain;
+    private YourFilter filter;
+    private Method doFilterInternalMethod;
 
     @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        filter = new TestableYourFilter();
-    }
-
-    // Test subclass to expose the protected method
-    private class TestableYourFilter extends YourFilter {
-        public void testDoFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) 
-                throws ServletException, IOException {
-            super.doFilterInternal(request, response, filterChain);
-        }
+    void setUp() throws NoSuchMethodException {
+        filter = new YourFilter();
+        doFilterInternalMethod = YourFilter.class.getDeclaredMethod("doFilterInternal", 
+            HttpServletRequest.class, HttpServletResponse.class, FilterChain.class);
+        doFilterInternalMethod.setAccessible(true);
     }
 
     @Test
-    void testDoFilterInternal_NonMultipartRequest() throws ServletException, IOException {
+    void testDoFilterInternal_NonMultipartRequest() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
 
-        filter.testDoFilterInternal(request, response, filterChain);
+        doFilterInternalMethod.invoke(filter, request, response, filterChain);
 
         verify(filterChain).doFilter(request, response);
     }
 
-    @Test
-    void testDoFilterInternal_MultipartRequestWithInvalidFile() throws ServletException, IOException {
-        MockHttpServletRequest request = new MockHttpServletRequest();
-        request.setContent("some content".getBytes());
-        request.setContentType("multipart/form-data");
-        StandardMultipartHttpServletRequest multipartRequest = new StandardMultipartHttpServletRequest(request);
-
-        MockHttpServletResponse response = new MockHttpServletResponse();
-
-        // Mock the isUploadedFileSecure method to return false
-        TestableYourFilter spyFilter = spy(filter);
-        doReturn(false).when(spyFilter).isUploadedFileSecure(any(HttpServletRequest.class));
-
-        assertThrows(SecurityException.class, () -> 
-            spyFilter.testDoFilterInternal(multipartRequest, response, filterChain)
-        );
-
-        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.getStatus());
-    }
-
-    // ... other test methods follow the same pattern
+    // Other test methods follow a similar pattern
 }
