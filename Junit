@@ -1,38 +1,30 @@
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.slf4j.Logger;
-
-import javax.servlet.http.HttpServletRequest;
-
-import static org.mockito.Mockito.*;
-
-@ExtendWith(MockitoExtension.class)
-class UploadFilterTest {
-
-    @Mock
-    private HttpServletRequest request;
-
-    @Mock
-    private Logger log;
-
-    @Test
-    void testCatchBlockHandling() {
-        // Arrange
-        byte[] cachedFilebytes = "test data".getBytes();
-        PaceServletException expectedException = new PaceServletException("Test exception");
-
-        // Act
-        try {
-            // Simulate the UploadRequest constructor throwing an exception
-            throw expectedException;
-        } catch (PaceServletException e) {
-            // This is the exact catch block from the given code
-            log.error("while uploading request: ", e);
-        }
-
-        // Assert
-        verify(log).error(eq("while uploading request: "), eq(expectedException));
-    }
+@Test
+void testUploadRequestCreationException() throws ServletException, IOException {
+    HttpServletRequest mockRequest = mock(HttpServletRequest.class);
+    HttpServletResponse mockResponse = mock(HttpServletResponse.class);
+    FilterChain mockFilterChain = mock(FilterChain.class);
+    
+    YourFilter filter = new YourFilter();
+    
+    // Mock the necessary methods to reach the UploadRequest creation
+    when(mockRequest.getInputStream()).thenReturn(new ServletInputStream() {
+        @Override
+        public boolean isFinished() { return true; }
+        @Override
+        public boolean isReady() { return true; }
+        @Override
+        public void setReadListener(ReadListener readListener) {}
+        @Override
+        public int read() throws IOException { return -1; }
+    });
+    
+    // Mock UploadRequest constructor to throw PaceServletException
+    mockStatic(UploadRequest.class);
+    when(UploadRequest.class, "new", any(HttpServletRequest.class), any(byte[].class))
+        .thenThrow(new PaceServletException("Test exception"));
+    
+    filter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
+    
+    // Verify that the exception is logged
+    // You might need to use a logging framework and capture logs to verify this
 }
