@@ -1,59 +1,74 @@
-import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
+import org.junit.jupiter.api.Test;
 
-class RejectedTradeTest {
+public class BreakIdentificationTest {
 
     @Test
-    void testDefaultConstructor() {
-        RejectedTrade rejectedTrade = new RejectedTrade();
-        assertNull(rejectedTrade.getTradeID());
-        assertNull(rejectedTrade.getRejectCode());
-        assertNull(rejectedTrade.getMessageText());
+    public void testConstructorWithAllParams() {
+        long id = 123L;
+        long sequenceNumber = 456L;
+        String controlID = "ABC123";
+
+        BreakIdentification bi = new BreakIdentification(id, sequenceNumber, controlID);
+
+        assertEquals(id, bi.getId());
+        assertEquals(sequenceNumber, bi.getSequenceNumber());
+        assertEquals(controlID, bi.getControlID());
     }
 
     @Test
-    void testParameterizedConstructor() {
-        TradeIdentification tradeID = new TradeIdentification(); // Assume a default constructor
-        String rejectCode = "RC123";
-        String messageText = "Trade rejected";
+    public void testConstructorWithPartialParams() {
+        long id = 123L;
+        long sequenceNumber = 456L;
 
-        RejectedTrade rejectedTrade = new RejectedTrade(tradeID, rejectCode, messageText);
+        BreakIdentification bi = new BreakIdentification(id, sequenceNumber);
 
-        assertEquals(tradeID, rejectedTrade.getTradeID());
-        assertEquals(rejectCode, rejectedTrade.getRejectCode());
-        assertEquals(messageText, rejectedTrade.getMessageText());
+        assertEquals(id, bi.getId());
+        assertEquals(sequenceNumber, bi.getSequenceNumber());
+        assertNull(bi.getControlID());
     }
 
     @Test
-    void testSettersAndGetters() {
-        RejectedTrade rejectedTrade = new RejectedTrade();
+    public void testGettersAndSetters() {
+        long id = 123L;
+        long sequenceNumber = 456L;
+        String controlID = "ABC123";
 
-        TradeIdentification tradeID = new TradeIdentification(); // Assume a default constructor
-        String rejectCode = "RC123";
-        String messageText = "Trade rejected";
+        BreakIdentification bi = new BreakIdentification(id, sequenceNumber);
+        bi.setControlID(controlID);
 
-        rejectedTrade.setTradeID(tradeID);
-        rejectedTrade.setRejectCode(rejectCode);
-        rejectedTrade.setMessageText(messageText);
-
-        assertEquals(tradeID, rejectedTrade.getTradeID());
-        assertEquals(rejectCode, rejectedTrade.getRejectCode());
-        assertEquals(messageText, rejectedTrade.getMessageText());
+        assertEquals(controlID, bi.getControlID());
     }
 
     @Test
-    void testEquals() {
-        TradeIdentification tradeID1 = new TradeIdentification(); // Assume a default constructor
-        TradeIdentification tradeID2 = new TradeIdentification(); // Assume a default constructor
-        String rejectCode = "RC123";
+    public void testEqualsWithSameValues() {
+        BreakIdentification bi1 = new BreakIdentification(123L, 456L, "ABC123");
+        BreakIdentification bi2 = new BreakIdentification(123L, 456L, "ABC123");
 
-        RejectedTrade trade1 = new RejectedTrade(tradeID1, rejectCode, "Message");
-        RejectedTrade trade2 = new RejectedTrade(tradeID1, rejectCode, "Message");
-        RejectedTrade trade3 = new RejectedTrade(tradeID2, rejectCode, "Message");
+        assertEquals(bi1, bi2);
+    }
 
-        assertTrue(trade1.equals(trade2));
-        assertFalse(trade1.equals(trade3));
-        assertFalse(trade1.equals(new Object())); // Different type
-        assertFalse(trade1.equals(null)); // Null
+    @Test
+    public void testEqualsWithDifferentValues() {
+        BreakIdentification bi1 = new BreakIdentification(123L, 456L, "ABC123");
+        BreakIdentification bi2 = new BreakIdentification(124L, 457L, "XYZ789");
+
+        assertNotEquals(bi1, bi2);
+    }
+
+    @Test
+    public void testEqualsWithNullControlID() {
+        BreakIdentification bi1 = new BreakIdentification(123L, 456L, null);
+        BreakIdentification bi2 = new BreakIdentification(123L, 456L, null);
+
+        assertEquals(bi1, bi2);
+    }
+
+    @Test
+    public void testEqualsWithDifferentControlID() {
+        BreakIdentification bi1 = new BreakIdentification(123L, 456L, null);
+        BreakIdentification bi2 = new BreakIdentification(123L, 456L, "ABC123");
+
+        assertNotEquals(bi1, bi2);
     }
 }
