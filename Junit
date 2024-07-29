@@ -1,13 +1,50 @@
-Let's take a more detailed approach to mocking and handling the dependencies, ensuring that all necessary parts are correctly set up.
+Here's a JUnit 5 test class for `TMGetterMustExistRule` with proper mocking and validation for the `evaluate` method:
 
-### Step-by-Step Approach:
-1. **Mock Dependencies**: Ensure all dependencies like `PojoClass`, `PojoField`, `ValidationHelper`, etc., are correctly mocked.
-2. **Use Mocked Static Methods Properly**: Ensure that static methods are mocked within a try-with-resources block to manage their scope.
-3. **Handle Constructor Issues**: If the `PojoClass` constructor is failing, mock its behavior as well.
-
-Here's a revised version of the test class with these considerations:
-
+### TMGetterMustExistRule.java (Implementation for Reference)
 ```java
+import com.openpojo.validation.affirm.Affirm;
+import com.openpojo.reflection.PojoClass;
+import com.openpojo.reflection.PojoField;
+import com.openpojo.validation.rule.Rule;
+import com.openpojo.validation.utils.ValidationHelper;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public class TMGetterMustExistRule implements Rule {
+    private List<String> skipList = null;
+
+    public TMGetterMustExistRule() {
+        skipList = new ArrayList<>();
+    }
+
+    public TMGetterMustExistRule(List<String> skipList) {
+        this.skipList = skipList;
+    }
+
+    @Override
+    public void evaluate(final PojoClass pojoClass) {
+        for (PojoField fieldEntry : pojoClass.getPojoFields()) {
+            if (!skipList.contains(fieldEntry.getName())) {
+                if (!ValidationHelper.isStaticFinal(fieldEntry) && !fieldEntry.hasGetter()) {
+                    Affirm.fail("[%s] is missing a getter".formatted(fieldEntry));
+                }
+            }
+        }
+    }
+
+    public void setSkipList(List<String> skipList) {
+        this.skipList = skipList;
+    }
+}
+```
+
+### TMGetterMustExistRuleTest.java (JUnit 5 Test Class)
+```java
+import com.openpojo.reflection.PojoClass;
+import com.openpojo.reflection.PojoField;
+import com.openpojo.validation.utils.ValidationHelper;
+import com.openpojo.validation.affirm.Affirm;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
@@ -18,8 +55,8 @@ import java.util.List;
 
 import static org.mockito.Mockito.*;
 
-class THBetterTesterTest {
-    private THBetterTester tester;
+class TMGetterMustExistRuleTest {
+    private TMGetterMustExistRule rule;
     private PojoClass pojoClass;
     private PojoField pojoField;
     private List<PojoField> pojoFields;
@@ -36,95 +73,65 @@ class THBetterTesterTest {
         // Set up PojoClass mock
         when(pojoClass.getPojoFields()).thenReturn(pojoFields);
 
-        // Create skipList and tester instances
+        // Initialize skipList and rule instance
         skipList = new ArrayList<>();
-        tester = new THBetterTester(skipList);
+        rule = new TMGetterMustExistRule(skipList);
     }
 
     @Test
-    void testRun_withGetterAndNonFinalField() throws Exception {
+    void testEvaluate_withGetter() {
+        // Set up PojoField mock
+        when(pojoField.getName()).thenReturn("field");
+        when(pojoField.hasGetter()).thenReturn(true);
+
+        // Run the rule evaluation
+        rule.evaluate(pojoClass);
+
+        // Verify no failure
+        verify(pojoField).getName();
+        verify(pojoField).hasGetter();
+    }
+
+    @Test
+    void testEvaluate_withoutGetter() {
         try (MockedStatic<ValidationHelper> validationHelperMockedStatic = Mockito.mockStatic(ValidationHelper.class);
-             MockedStatic<RandomFactory> randomFactoryMockedStatic = Mockito.mockStatic(RandomFactory.class);
-             MockedStatic<IdentityHandlerStub> identityHandlerStubMockedStatic = Mockito.mockStatic(IdentityHandlerStub.class);
              MockedStatic<Affirm> affirmMockedStatic = Mockito.mockStatic(Affirm.class)) {
             
             // Set up PojoField mock
             when(pojoField.getName()).thenReturn("field");
-            when(pojoField.hasGetter()).thenReturn(true);
-            when(pojoField.isFinal()).thenReturn(false);
+            when(pojoField.hasGetter()).thenReturn(false);
+            validationHelperMockedStatic.when(() -> ValidationHelper.isStaticFinal(pojoField)).thenReturn(false);
 
-            // Set up PojoField get and invokeGetter methods
-            Object initialValue = new Object();
-            when(pojoField.get(any())).thenReturn(initialValue);
-            when(pojoField.invokeGetter(any())).thenReturn(initialValue);
+            // Run the rule evaluation
+            rule.evaluate(pojoClass);
 
-            // Set up RandomFactory mock
-            Object randomValue = new Object();
-            randomFactoryMockedStatic.when(() -> RandomFactory.getRandomValue(any())).thenReturn(randomValue);
-
-            // Set up ValidationHelper mock
-            Object classInstance = new Object();
-            validationHelperMockedStatic.when(() -> ValidationHelper.getBasicInstance(any())).thenReturn(classInstance);
-
-            // Run the tester
-            tester.run(pojoClass);
-
-            // Verify interactions
-            verify(pojoField).get(classInstance);
-            verify(pojoField).set(classInstance, randomValue);
-            verify(pojoField).invokeGetter(classInstance);
-            identityHandlerStubMockedStatic.verify(() -> IdentityHandlerStub.registerIdentityHandlerStubForValue(randomValue));
-            identityHandlerStubMockedStatic.verify(() -> IdentityHandlerStub.unregisterIdentityHandlerStubForValue(randomValue));
+            // Verify failure due to missing getter
+            affirmMockedStatic.verify(() -> Affirm.fail("[%s] is missing a getter".formatted(pojoField)));
         }
     }
 
     @Test
-    void testRun_withSkipList() {
+    void testEvaluate_withSkipList() {
         // Add field name to skipList
         skipList.add("field");
 
         // Set up PojoField mock
         when(pojoField.getName()).thenReturn("field");
-        when(pojoField.hasGetter()).thenReturn(true);
 
-        // Run the tester
-        tester.run(pojoClass);
+        // Run the rule evaluation
+        rule.evaluate(pojoClass);
 
-        // Verify no interactions with the field due to skipList
-        verify(pojoField, never()).get(any());
-        verify(pojoField, never()).set(any(), any());
-        verify(pojoField, never()).invokeGetter(any());
-    }
-
-    @Test
-    void testRun_withoutGetter() {
-        // Set up PojoField mock
-        when(pojoField.getName()).thenReturn("field");
-        when(pojoField.hasGetter()).thenReturn(false);
-
-        // Run the tester
-        tester.run(pojoClass);
-
-        // Verify no interactions with the field due to missing getter
-        verify(pojoField, never()).get(any());
-        verify(pojoField, never()).set(any(), any());
-        verify(pojoField, never()).invokeGetter(any());
+        // Verify the field was skipped
+        verify(pojoField).getName();
+        verify(pojoField, never()).hasGetter();
     }
 }
 ```
 
-### Additional Tips:
-1. **Check `PojoClass` and `PojoField` Implementation**:
-    - Ensure these classes are correctly defined and their methods (`getPojoFields`, `getName`, `hasGetter`, etc.) are correctly accessible.
-  
-2. **Handle Null Constructors**:
-    - If `PojoClass` has a specific constructor requirement, ensure that your mock handles this correctly. For example, if `PojoClass` requires parameters in its constructor, mock it accordingly.
+### Explanation:
+1. **Mocking Dependencies**:
+    - Mock `PojoClass` and `PojoField` to simulate the behavior of the actual classes.
+    - Use `MockedStatic` for static methods in `ValidationHelper` and `Affirm`.
 
-3. **Verify Static Mocking**:
-    - Make sure the static methods are correctly mocked within the scope of the try-with-resources block.
-
-4. **Use Correct Annotations and Dependencies**:
-    - Ensure you are using the correct annotations for JUnit 5 (`@Test`, `@BeforeEach`, etc.).
-    - Ensure Mockito and any other dependencies are correctly included in your project.
-
-If the issue persists, it would be helpful to see the actual implementation of `PojoClass` and `PojoField` to provide more specific guidance.
+2. **Test Methods**:
+    - `testEvaluate_withGetter`: Verifies that no failure occurs when
