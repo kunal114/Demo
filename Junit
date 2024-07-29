@@ -1,30 +1,86 @@
-@Test
-void testUploadRequestCreationException() throws ServletException, IOException {
-    HttpServletRequest mockRequest = mock(HttpServletRequest.class);
-    HttpServletResponse mockResponse = mock(HttpServletResponse.class);
-    FilterChain mockFilterChain = mock(FilterChain.class);
-    
-    YourFilter filter = new YourFilter();
-    
-    // Mock the necessary methods to reach the UploadRequest creation
-    when(mockRequest.getInputStream()).thenReturn(new ServletInputStream() {
+import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+
+import javax.servlet.FilterChain;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import org.slf4j.Logger;
+
+class FileUploadFilterTest {
+
+    @InjectMocks
+    private FileUploadFilter fileUploadFilter;
+
+    @Mock
+    private Logger log;
+
+    @Mock
+    private HttpServletRequest request;
+
+    @Mock
+    private HttpServletResponse response;
+
+    @Mock
+    private FilterChain filterChain;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+    }
+
+    @Test
+    void testDoFilterInternal_ServletException() throws IOException {
+        byte[] cachedFileBytes = new byte[0];
+        ByteArrayInputStream bais = new ByteArrayInputStream(cachedFileBytes);
+        when(request.getInputStream()).thenReturn(new DelegatingServletInputStream(bais));
+
+        ServletException servletException = new ServletException("Simulated ServletException");
+        doThrow(servletException).when(filterChain).doFilter(any(), any());
+
+        assertThrows(ServletException.class, () -> {
+            fileUploadFilter.doFilterInternal(request, response, filterChain);
+        });
+
+        verify(log).error(eq("Error while uploading request"), eq(servletException));
+    }
+
+    // A utility class to wrap ByteArrayInputStream as ServletInputStream
+    static class DelegatingServletInputStream extends javax.servlet.ServletInputStream {
+        private final ByteArrayInputStream bais;
+
+        public DelegatingServletInputStream(ByteArrayInputStream bais) {
+            this.bais = bais;
+        }
+
         @Override
-        public boolean isFinished() { return true; }
+        public int read() throws IOException {
+            return bais.read();
+        }
+
         @Override
-        public boolean isReady() { return true; }
+        public boolean isFinished() {
+            return bais.available() == 0;
+        }
+
         @Override
-        public void setReadListener(ReadListener readListener) {}
+        public boolean isReady() {
+            return true;
+        }
+
         @Override
-        public int read() throws IOException { return -1; }
-    });
-    
-    // Mock UploadRequest constructor to throw PaceServletException
-    mockStatic(UploadRequest.class);
-    when(UploadRequest.class, "new", any(HttpServletRequest.class), any(byte[].class))
-        .thenThrow(new PaceServletException("Test exception"));
-    
-    filter.doFilterInternal(mockRequest, mockResponse, mockFilterChain);
-    
-    // Verify that the exception is logged
-    // You might need to use a logging framework and capture logs to verify this
+        public void setReadListener(javax.servlet.ReadListener readListener) {
+            throw new UnsupportedOperationException();
+        }
+    }
 }
