@@ -1,137 +1,66 @@
-Here's a JUnit 5 test class for `TMGetterMustExistRule` with proper mocking and validation for the `evaluate` method:
-
-### TMGetterMustExistRule.java (Implementation for Reference)
-```java
-import com.openpojo.validation.affirm.Affirm;
-import com.openpojo.reflection.PojoClass;
-import com.openpojo.reflection.PojoField;
-import com.openpojo.validation.rule.Rule;
-import com.openpojo.validation.utils.ValidationHelper;
-
-import java.util.ArrayList;
-import java.util.List;
-
-public class TMGetterMustExistRule implements Rule {
-    private List<String> skipList = null;
-
-    public TMGetterMustExistRule() {
-        skipList = new ArrayList<>();
-    }
-
-    public TMGetterMustExistRule(List<String> skipList) {
-        this.skipList = skipList;
-    }
-
-    @Override
-    public void evaluate(final PojoClass pojoClass) {
-        for (PojoField fieldEntry : pojoClass.getPojoFields()) {
-            if (!skipList.contains(fieldEntry.getName())) {
-                if (!ValidationHelper.isStaticFinal(fieldEntry) && !fieldEntry.hasGetter()) {
-                    Affirm.fail("[%s] is missing a getter".formatted(fieldEntry));
-                }
-            }
-        }
-    }
-
-    public void setSkipList(List<String> skipList) {
-        this.skipList = skipList;
-    }
-}
-```
-
-### TMGetterMustExistRuleTest.java (JUnit 5 Test Class)
-```java
-import com.openpojo.reflection.PojoClass;
-import com.openpojo.reflection.PojoField;
-import com.openpojo.validation.utils.ValidationHelper;
-import com.openpojo.validation.affirm.Affirm;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.MockedStatic;
-import org.mockito.Mockito;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.io.IOException;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
-class TMGetterMustExistRuleTest {
-    private TMGetterMustExistRule rule;
-    private PojoClass pojoClass;
-    private PojoField pojoField;
-    private List<PojoField> pojoFields;
-    private List<String> skipList;
+class RequestWrapperFilterTest {
+
+    private RequestWrapperFilter filter;
+
+    @Mock
+    private HttpServletRequest httpServletRequest;
+
+    @Mock
+    private ServletRequest servletRequest;
+
+    @Mock
+    private ServletResponse servletResponse;
+
+    @Mock
+    private FilterChain filterChain;
 
     @BeforeEach
     void setUp() {
-        // Create mock objects
-        pojoClass = mock(PojoClass.class);
-        pojoField = mock(PojoField.class);
-        pojoFields = new ArrayList<>();
-        pojoFields.add(pojoField);
-
-        // Set up PojoClass mock
-        when(pojoClass.getPojoFields()).thenReturn(pojoFields);
-
-        // Initialize skipList and rule instance
-        skipList = new ArrayList<>();
-        rule = new TMGetterMustExistRule(skipList);
+        MockitoAnnotations.openMocks(this);
+        filter = new RequestWrapperFilter();
     }
 
     @Test
-    void testEvaluate_withGetter() {
-        // Set up PojoField mock
-        when(pojoField.getName()).thenReturn("field");
-        when(pojoField.hasGetter()).thenReturn(true);
+    void testDoFilter_withHttpServletRequest() throws IOException, ServletException {
+        // Given: HttpServletRequest instance
+        when(servletRequest instanceof HttpServletRequest).thenReturn(true);
+        when((HttpServletRequest) servletRequest).thenReturn(httpServletRequest);
 
-        // Run the rule evaluation
-        rule.evaluate(pojoClass);
+        // When: doFilter is called
+        filter.doFilter(servletRequest, servletResponse, filterChain);
 
-        // Verify no failure
-        verify(pojoField).getName();
-        verify(pojoField).hasGetter();
+        // Then: CookieModifierRequest should be passed to the filter chain
+        ArgumentCaptor<ServletRequest> requestCaptor = ArgumentCaptor.forClass(ServletRequest.class);
+        verify(filterChain).doFilter(requestCaptor.capture(), eq(servletResponse));
+
+        assertTrue(requestCaptor.getValue() instanceof CookieModifierRequest);
     }
 
     @Test
-    void testEvaluate_withoutGetter() {
-        try (MockedStatic<ValidationHelper> validationHelperMockedStatic = Mockito.mockStatic(ValidationHelper.class);
-             MockedStatic<Affirm> affirmMockedStatic = Mockito.mockStatic(Affirm.class)) {
-            
-            // Set up PojoField mock
-            when(pojoField.getName()).thenReturn("field");
-            when(pojoField.hasGetter()).thenReturn(false);
-            validationHelperMockedStatic.when(() -> ValidationHelper.isStaticFinal(pojoField)).thenReturn(false);
+    void testDoFilter_withoutHttpServletRequest() throws IOException, ServletException {
+        // Given: Non-HttpServletRequest instance
+        when(servletRequest instanceof HttpServletRequest).thenReturn(false);
 
-            // Run the rule evaluation
-            rule.evaluate(pojoClass);
+        // When: doFilter is called
+        filter.doFilter(servletRequest, servletResponse, filterChain);
 
-            // Verify failure due to missing getter
-            affirmMockedStatic.verify(() -> Affirm.fail("[%s] is missing a getter".formatted(pojoField)));
-        }
-    }
-
-    @Test
-    void testEvaluate_withSkipList() {
-        // Add field name to skipList
-        skipList.add("field");
-
-        // Set up PojoField mock
-        when(pojoField.getName()).thenReturn("field");
-
-        // Run the rule evaluation
-        rule.evaluate(pojoClass);
-
-        // Verify the field was skipped
-        verify(pojoField).getName();
-        verify(pojoField, never()).hasGetter();
+        // Then: Original ServletRequest should be passed to the filter chain
+        verify(filterChain).doFilter(servletRequest, servletResponse);
     }
 }
-```
-
-### Explanation:
-1. **Mocking Dependencies**:
-    - Mock `PojoClass` and `PojoField` to simulate the behavior of the actual classes.
-    - Use `MockedStatic` for static methods in `ValidationHelper` and `Affirm`.
-
-2. **Test Methods**:
-    - `testEvaluate_withGetter`: Verifies that no failure occurs when
