@@ -1,89 +1,48 @@
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import java.text.ParseException;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import com.bear.trs.client.api.ServiceFaultException;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
-public class ServiceFaultHelperTest {
+@ExtendWith(MockitoExtension.class)
+class GetSecurityIdentifierTest {
 
-    private static final String AUTHENTICATION_ERROR = "CLIENT.AUTHENTICATION";
+    @Mock
+    private JdbcTemplate jdbcTemplate;
 
-    @Test
-    public void testHasAuthenticationErrorWithAuthenticationError() {
-        // Setup
-        ServiceFaultException exception = mock(ServiceFaultException.class);
-        when(exception.getFaultcode()).thenReturn("CLIENT.AUTHENTICATION.SOME_REASON");
+    @InjectMocks
+    private YourServiceClass yourServiceClass;
 
-        // Test
-        boolean result = ServiceFaultHelper.hasAuthenticationError(exception);
+    private final String sql = "SELECT ..."; // your actual SQL query here
 
-        // Assertion
-        assertTrue(result, "Expected authentication error to be detected.");
+    @BeforeEach
+    void setUp() {
+        // Initialize your service class if necessary
     }
 
     @Test
-    public void testHasAuthenticationErrorWithoutAuthenticationError() {
-        // Setup
-        ServiceFaultException exception = mock(ServiceFaultException.class);
-        when(exception.getFaultcode()).thenReturn("CLIENT.OTHER_ERROR");
+    void testGetSecurityIdentifier() throws ParseException {
+        String symbol = "TEST_SYMBOL";
+        String side = "BUY";
+        String expDate = "2023-12-31";
+        String strikePrice = "100";
 
-        // Test
-        boolean result = ServiceFaultHelper.hasAuthenticationError(exception);
+        String expectedSecurityIdentifier = "EXPECTED_IDENTIFIER";
 
-        // Assertion
-        assertFalse(result, "Expected no authentication error to be detected.");
-    }
+        when(jdbcTemplate.queryForObject(anyString(), any(Class.class), any(Object[].class)))
+            .thenReturn(expectedSecurityIdentifier);
 
-    @Test
-    public void testHasAuthenticationErrorWithNullFaultCode() {
-        // Setup
-        ServiceFaultException exception = mock(ServiceFaultException.class);
-        when(exception.getFaultcode()).thenReturn(null);
+        String actualSecurityIdentifier = yourServiceClass.getSecurityIdentifier(symbol, side, expDate, strikePrice);
 
-        // Test
-        boolean result = ServiceFaultHelper.hasAuthenticationError(exception);
-
-        // Assertion
-        assertFalse(result, "Expected no authentication error to be detected when fault code is null.");
-    }
-
-    @Test
-    public void testHasAuthenticationErrorWithNonServiceFaultException() {
-        // Test
-        boolean result = ServiceFaultHelper.hasAuthenticationError(new Exception());
-
-        // Assertion
-        assertFalse(result, "Expected no authentication error to be detected when not a ServiceFaultException.");
-    }
-
-    @Test
-    public void testGetMessageWithValidException() {
-        // Setup
-        ServiceFaultException exception = mock(ServiceFaultException.class);
-        when(exception.getFaultstring()).thenReturn("An error occurred");
-
-        // Test
-        String result = ServiceFaultHelper.getMessage(exception);
-
-        // Assertion
-        assertEquals("An error occurred", result, "Expected faultstring to be returned.");
-    }
-
-    @Test
-    public void testGetMessageWithNullException() {
-        // Test
-        String result = ServiceFaultHelper.getMessage(null);
-
-        // Assertion
-        assertNull(result, "Expected null when exception is null.");
-    }
-
-    @Test
-    public void testGetMessageWithNonServiceFaultException() {
-        // Test
-        String result = ServiceFaultHelper.getMessage(new Exception());
-
-        // Assertion
-        assertNull(result, "Expected null when not a ServiceFaultException.");
+        assertEquals(expectedSecurityIdentifier, actualSecurityIdentifier);
     }
 }
