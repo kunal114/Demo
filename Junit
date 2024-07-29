@@ -1,61 +1,59 @@
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.ServletRequest;
-import jakarta.servlet.ServletResponse;
-import jakarta.servlet.http.HttpServletRequest;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import static org.junit.jupiter.api.Assertions.*;
 
-import java.io.IOException;
+class RejectedTradeTest {
 
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.Mockito.*;
-
-class RequestWrapperFilterTest {
-
-    private RequestWrapperFilter filter;
-
-    @Mock
-    private HttpServletRequest httpServletRequest;
-
-    @Mock
-    private ServletRequest servletRequest;
-
-    @Mock
-    private ServletResponse servletResponse;
-
-    @Mock
-    private FilterChain filterChain;
-
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        filter = new RequestWrapperFilter();
+    @Test
+    void testDefaultConstructor() {
+        RejectedTrade rejectedTrade = new RejectedTrade();
+        assertNull(rejectedTrade.getTradeID());
+        assertNull(rejectedTrade.getRejectCode());
+        assertNull(rejectedTrade.getMessageText());
     }
 
     @Test
-    void testDoFilter_withHttpServletRequest() throws IOException, ServletException {
-        // Given: HttpServletRequest instance
-        // When: doFilter is called
-        filter.doFilter(httpServletRequest, servletResponse, filterChain);
+    void testParameterizedConstructor() {
+        TradeIdentification tradeID = new TradeIdentification(); // Assume a default constructor
+        String rejectCode = "RC123";
+        String messageText = "Trade rejected";
 
-        // Then: CookieModifierRequest should be passed to the filter chain
-        ArgumentCaptor<ServletRequest> requestCaptor = ArgumentCaptor.forClass(ServletRequest.class);
-        verify(filterChain).doFilter(requestCaptor.capture(), eq(servletResponse));
+        RejectedTrade rejectedTrade = new RejectedTrade(tradeID, rejectCode, messageText);
 
-        assertTrue(requestCaptor.getValue() instanceof CookieModifierRequest);
+        assertEquals(tradeID, rejectedTrade.getTradeID());
+        assertEquals(rejectCode, rejectedTrade.getRejectCode());
+        assertEquals(messageText, rejectedTrade.getMessageText());
     }
 
     @Test
-    void testDoFilter_withoutHttpServletRequest() throws IOException, ServletException {
-        // Given: Non-HttpServletRequest instance
-        // When: doFilter is called
-        filter.doFilter(servletRequest, servletResponse, filterChain);
+    void testSettersAndGetters() {
+        RejectedTrade rejectedTrade = new RejectedTrade();
 
-        // Then: Original ServletRequest should be passed to the filter chain
-        verify(filterChain).doFilter(servletRequest, servletResponse);
+        TradeIdentification tradeID = new TradeIdentification(); // Assume a default constructor
+        String rejectCode = "RC123";
+        String messageText = "Trade rejected";
+
+        rejectedTrade.setTradeID(tradeID);
+        rejectedTrade.setRejectCode(rejectCode);
+        rejectedTrade.setMessageText(messageText);
+
+        assertEquals(tradeID, rejectedTrade.getTradeID());
+        assertEquals(rejectCode, rejectedTrade.getRejectCode());
+        assertEquals(messageText, rejectedTrade.getMessageText());
+    }
+
+    @Test
+    void testEquals() {
+        TradeIdentification tradeID1 = new TradeIdentification(); // Assume a default constructor
+        TradeIdentification tradeID2 = new TradeIdentification(); // Assume a default constructor
+        String rejectCode = "RC123";
+
+        RejectedTrade trade1 = new RejectedTrade(tradeID1, rejectCode, "Message");
+        RejectedTrade trade2 = new RejectedTrade(tradeID1, rejectCode, "Message");
+        RejectedTrade trade3 = new RejectedTrade(tradeID2, rejectCode, "Message");
+
+        assertTrue(trade1.equals(trade2));
+        assertFalse(trade1.equals(trade3));
+        assertFalse(trade1.equals(new Object())); // Different type
+        assertFalse(trade1.equals(null)); // Null
     }
 }
