@@ -1,85 +1,98 @@
-Certainly! Let's update the existing JUnit test to cover the specific class you've provided. I'll make the necessary adjustments to ensure better test coverage for your `RestTemplateFactory` class. Here's the modified test:
+Sure, here is an example of how you can write JUnit 5 tests for the `THSetterHustExistRule` class. We'll use Mockito to mock the `PojoClass` and `PojoField` dependencies.
+
+First, ensure you have the necessary dependencies in your `pom.xml` or `build.gradle` for JUnit 5 and Mockito.
+
+### JUnit 5 Test Class
 
 ```java
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.client.RestTemplate;
+import org.mockito.Mockito;
 
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.security.KeyStore;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.CertificateException;
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.when;
 
-class RestTemplateFactoryTest {
+public class THSetterHustExistRuleTest {
 
-    private RestTemplateFactory restTemplateFactory;
-
-    @Mock
-    private RestTemplate restTemplate;
+    private PojoClass pojoClass;
+    private PojoField fieldWithSetter;
+    private PojoField fieldWithoutSetter;
+    private PojoField finalField;
 
     @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-        restTemplateFactory = new RestTemplateFactory();
-        // Set the restTemplate directly (since we're not using the setter)
-        restTemplateFactory.restTemplate = restTemplate;
+    public void setUp() {
+        pojoClass = Mockito.mock(PojoClass.class);
+        fieldWithSetter = Mockito.mock(PojoField.class);
+        fieldWithoutSetter = Mockito.mock(PojoField.class);
+        finalField = Mockito.mock(PojoField.class);
+
+        when(fieldWithSetter.getName()).thenReturn("fieldWithSetter");
+        when(fieldWithSetter.isFinal()).thenReturn(false);
+        when(fieldWithSetter.hasSetter()).thenReturn(true);
+
+        when(fieldWithoutSetter.getName()).thenReturn("fieldWithoutSetter");
+        when(fieldWithoutSetter.isFinal()).thenReturn(false);
+        when(fieldWithoutSetter.hasSetter()).thenReturn(false);
+
+        when(finalField.getName()).thenReturn("finalField");
+        when(finalField.isFinal()).thenReturn(true);
+        when(finalField.hasSetter()).thenReturn(false);
+
+        List<PojoField> pojoFields = new ArrayList<>();
+        pojoFields.add(fieldWithSetter);
+        pojoFields.add(fieldWithoutSetter);
+        pojoFields.add(finalField);
+
+        when(pojoClass.getPojoFields()).thenReturn(pojoFields);
     }
 
     @Test
-    void testGetRestTemplate() {
-        // Mocking behavior for your restTemplate
-        when(restTemplate.getMessageConverters()).thenReturn(Collections.emptyList());
+    public void testEvaluate_withValidSetters() {
+        THSetterHustExistRule rule = new THSetterHustExistRule();
 
-        // Call the method you want to test
-        RestTemplate result = restTemplateFactory.getRestTemplate();
-
-        // Verify that the restTemplate was configured correctly
-        verify(restTemplate).getMessageConverters().add(any());
-        verify(restTemplate).getMessageConverters().add(any());
-
-        // Add more assertions as needed for your specific use case
-        // For example, you can verify that the SSL configuration is set up correctly.
+        // The test should pass without throwing an exception
+        assertDoesNotThrow(() -> rule.evaluate(pojoClass));
     }
 
     @Test
-    void testRestTemplateInitialization() {
-        // Test initialization of keyStorePath and secureCredential
-        assertNotNull(restTemplateFactory.keyStorePath);
-        assertNotNull(restTemplateFactory.secureCredential);
+    public void testEvaluate_missingSetter() {
+        THSetterHustExistRule rule = new THSetterHustExistRule();
 
-        // Test SSL context creation
-        try {
-            KeyStore trustStore = KeyStore.getInstance("JKS");
-            try (FileInputStream fis = new FileInputStream(restTemplateFactory.keyStorePath)) {
-                trustStore.load(fis, restTemplateFactory.secureCredential.getKeystorePassword().toCharArray());
-                // Verify that trustStore is loaded correctly
-            } catch (IOException | NoSuchAlgorithmException | CertificateException ex) {
-                fail("Exception while loading trust store: " + ex.getMessage());
-            }
+        // The test should throw an exception due to missing setter
+        Exception exception = assertThrows(RuntimeException.class, () -> rule.evaluate(pojoClass));
+        assert(exception.getMessage().contains("fieldWithoutSetter is missing a setter"));
+    }
 
-            // Verify that SSL context is properly created
-            // You can add more specific assertions related to SSL configuration here
-        } catch (Exception e) {
-            fail("Exception while creating SSL context: " + e.getMessage());
-        }
+    @Test
+    public void testEvaluate_withSkipList() {
+        List<String> skipList = new ArrayList<>();
+        skipList.add("fieldWithoutSetter");
+        THSetterHustExistRule rule = new THSetterHustExistRule(skipList);
 
-        // Test exception handling
-        // For example, you can test what happens when the keyStorePath is invalid or missing
-        // Verify that appropriate exceptions are caught and handled
+        // The test should pass without throwing an exception
+        assertDoesNotThrow(() -> rule.evaluate(pojoClass));
+    }
+
+    @Test
+    public void testEvaluate_withFinalField() {
+        THSetterHustExistRule rule = new THSetterHustExistRule();
+
+        // The test should pass without throwing an exception since the final field doesn't require a setter
+        assertDoesNotThrow(() -> rule.evaluate(pojoClass));
     }
 }
 ```
 
-Please adjust the assertions and test cases based on your actual implementation. If you have any further questions or need additional assistance, feel free to ask! 😊¹²³
+### Explanation
 
-Source: Conversation with Copilot, 7/29/2024
-(1) Custom RestTemplate using requestFactory of RestTemplateBuilder in .... https://stackoverflow.com/questions/53511471/custom-resttemplate-using-requestfactory-of-resttemplatebuilder-in-springboot-2.
-(2) Exploring the Spring Boot TestRestTemplate | Baeldung. https://www.baeldung.com/spring-boot-testresttemplate.
-(3) How to use RestTemplate efficiently with RequestFactory?. https://stackoverflow.com/questions/29295534/how-to-use-resttemplate-efficiently-with-requestfactory.
+1. **Dependencies**: We assume the `PojoClass` and `PojoField` are from an external library or another part of your codebase. Make sure to import them properly.
+
+2. **Setup**: The `@BeforeEach` method sets up the mocks for `PojoClass` and `PojoField`. This includes defining fields with and without setters, and a final field.
+
+3. **Test Methods**:
+   - `testEvaluate_withValidSetters()`: Verifies that the rule passes when all fields have setters.
+   - `testEvaluate_missingSetter()`:
