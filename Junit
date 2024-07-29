@@ -1,78 +1,89 @@
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import com.bear.trs.client.api.ServiceFaultException;
 
-import java.util.*;
+public class ServiceFaultHelperTest {
 
-public class YourClassTest {
+    private static final String AUTHENTICATION_ERROR = "CLIENT.AUTHENTICATION";
 
-    private YourClass yourClass; // Replace with the actual class name containing formHTMLPage
-    private KopsProperties kopsProperties;
+    @Test
+    public void testHasAuthenticationErrorWithAuthenticationError() {
+        // Setup
+        ServiceFaultException exception = mock(ServiceFaultException.class);
+        when(exception.getFaultcode()).thenReturn("CLIENT.AUTHENTICATION.SOME_REASON");
 
-    @BeforeEach
-    public void setUp() {
-        yourClass = new YourClass(); // Replace with actual class instantiation
-        kopsProperties = mock(KopsProperties.class);
+        // Test
+        boolean result = ServiceFaultHelper.hasAuthenticationError(exception);
+
+        // Assertion
+        assertTrue(result, "Expected authentication error to be detected.");
     }
 
     @Test
-    public void testFormHTMLPageWithNonEmptyProperties() {
-        // Setup mock data
-        Map<String, List<String>> properties = new HashMap<>();
-        properties.put("Category1/Key1", Arrays.asList("Value1"));
-        properties.put("Category1/Key2", Arrays.asList("Value2"));
-        properties.put("USER_LOGIN_ID", Arrays.asList("user123"));
+    public void testHasAuthenticationErrorWithoutAuthenticationError() {
+        // Setup
+        ServiceFaultException exception = mock(ServiceFaultException.class);
+        when(exception.getFaultcode()).thenReturn("CLIENT.OTHER_ERROR");
 
-        when(kopsProperties.getProperties()).thenReturn(properties);
+        // Test
+        boolean result = ServiceFaultHelper.hasAuthenticationError(exception);
 
-        String result = yourClass.formHTMLPage(kopsProperties);
-
-        // Expected HTML snippet
-        String expectedHTML = "<html><head><title>Kops User Information</title></head><body>"
-                + "<table width=\"95%\" border='1' cellspacing=\"8\" cellpadding=\"1\">"
-                + "<tbody>"
-                + "<tr bgcolor='lightgrey'><td colspan='2'><b>Category1</b></td></tr>"
-                + "<tr><td>Key1</td><td>Value1</td></tr>"
-                + "<tr><td>Key2</td><td>Value2</td></tr>"
-                + "<tr><td>USER_LOGIN_ID</td><td>user123</td></tr>"
-                + "</tbody></table></body></html>";
-
-        // Verify HTML structure
-        assertTrue(result.contains(expectedHTML), "The HTML generated does not match the expected output.");
+        // Assertion
+        assertFalse(result, "Expected no authentication error to be detected.");
     }
 
     @Test
-    public void testFormHTMLPageWithEmptyProperties() {
-        // Setup mock data
-        Map<String, List<String>> properties = new HashMap<>();
-        when(kopsProperties.getProperties()).thenReturn(properties);
+    public void testHasAuthenticationErrorWithNullFaultCode() {
+        // Setup
+        ServiceFaultException exception = mock(ServiceFaultException.class);
+        when(exception.getFaultcode()).thenReturn(null);
 
-        String result = yourClass.formHTMLPage(kopsProperties);
+        // Test
+        boolean result = ServiceFaultHelper.hasAuthenticationError(exception);
 
-        // Expected HTML snippet
-        String expectedHTML = "<html><head><title>Kops User Information</title></head><body>"
-                + "<table width=\"95%\" border='1' cellspacing=\"8\" cellpadding=\"1\">"
-                + "<tbody></tbody></table></body></html>";
-
-        // Verify HTML structure
-        assertEquals(expectedHTML, result, "The HTML generated does not match the expected output.");
+        // Assertion
+        assertFalse(result, "Expected no authentication error to be detected when fault code is null.");
     }
 
     @Test
-    public void testFormHTMLPageWithNullProperties() {
-        // Setup mock data
-        when(kopsProperties.getProperties()).thenReturn(null);
+    public void testHasAuthenticationErrorWithNonServiceFaultException() {
+        // Test
+        boolean result = ServiceFaultHelper.hasAuthenticationError(new Exception());
 
-        String result = yourClass.formHTMLPage(kopsProperties);
+        // Assertion
+        assertFalse(result, "Expected no authentication error to be detected when not a ServiceFaultException.");
+    }
 
-        // Expected HTML snippet
-        String expectedHTML = "<html><head><title>Kops User Information</title></head><body>"
-                + "<table width=\"95%\" border='1' cellspacing=\"8\" cellpadding=\"1\">"
-                + "<tbody></tbody></table></body></html>";
+    @Test
+    public void testGetMessageWithValidException() {
+        // Setup
+        ServiceFaultException exception = mock(ServiceFaultException.class);
+        when(exception.getFaultstring()).thenReturn("An error occurred");
 
-        // Verify HTML structure
-        assertEquals(expectedHTML, result, "The HTML generated does not match the expected output.");
+        // Test
+        String result = ServiceFaultHelper.getMessage(exception);
+
+        // Assertion
+        assertEquals("An error occurred", result, "Expected faultstring to be returned.");
+    }
+
+    @Test
+    public void testGetMessageWithNullException() {
+        // Test
+        String result = ServiceFaultHelper.getMessage(null);
+
+        // Assertion
+        assertNull(result, "Expected null when exception is null.");
+    }
+
+    @Test
+    public void testGetMessageWithNonServiceFaultException() {
+        // Test
+        String result = ServiceFaultHelper.getMessage(new Exception());
+
+        // Assertion
+        assertNull(result, "Expected null when not a ServiceFaultException.");
     }
 }
