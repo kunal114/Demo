@@ -1,45 +1,4 @@
-import static org.mockito.Mockito.*;
-import static org.junit.jupiter.api.Assertions.*;
-
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-
-import javax.servlet.FilterChain;
-import javax.servlet.ServletException;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import org.slf4j.Logger;
-
-class FileUploadFilterTest {
-
-    @InjectMocks
-    private FileUploadFilter fileUploadFilter;
-
-    @Mock
-    private Logger log;
-
-    @Mock
-    private HttpServletRequest request;
-
-    @Mock
-    private HttpServletResponse response;
-
-    @Mock
-    private FilterChain filterChain;
-
-    @BeforeEach
-    void setUp() {
-        MockitoAnnotations.openMocks(this);
-    }
-
-    @Test
+@Test
     void testDoFilterInternal_ServletException() throws IOException {
         byte[] cachedFileBytes = new byte[0];
         ByteArrayInputStream bais = new ByteArrayInputStream(cachedFileBytes);
@@ -56,7 +15,7 @@ class FileUploadFilterTest {
     }
 
     // A utility class to wrap ByteArrayInputStream as ServletInputStream
-    static class DelegatingServletInputStream extends javax.servlet.ServletInputStream {
+    static class DelegatingServletInputStream extends ServletInputStream {
         private final ByteArrayInputStream bais;
 
         public DelegatingServletInputStream(ByteArrayInputStream bais) {
@@ -79,8 +38,7 @@ class FileUploadFilterTest {
         }
 
         @Override
-        public void setReadListener(javax.servlet.ReadListener readListener) {
+        public void setReadListener(jakarta.servlet.ReadListener readListener) {
             throw new UnsupportedOperationException();
         }
     }
-}
