@@ -38,14 +38,11 @@ class RequestWrapperFilterTest {
 
     @Test
     void testDoFilter_withHttpServletRequest() throws IOException, ServletException {
-        // Given: ServletRequest is an instance of HttpServletRequest
+        // Given: servletRequest is an instance of HttpServletRequest
         when(servletRequest instanceof HttpServletRequest).thenReturn(true);
 
-        // Cast servletRequest to HttpServletRequest
-        when((HttpServletRequest) servletRequest).thenReturn(httpServletRequest);
-
         // When: doFilter is called
-        filter.doFilter(servletRequest, servletResponse, filterChain);
+        filter.doFilter(httpServletRequest, servletResponse, filterChain);
 
         // Then: CookieModifierRequest should be passed to the filter chain
         ArgumentCaptor<ServletRequest> requestCaptor = ArgumentCaptor.forClass(ServletRequest.class);
@@ -56,7 +53,7 @@ class RequestWrapperFilterTest {
 
     @Test
     void testDoFilter_withoutHttpServletRequest() throws IOException, ServletException {
-        // Given: ServletRequest is not an instance of HttpServletRequest
+        // Given: servletRequest is not an instance of HttpServletRequest
         when(servletRequest instanceof HttpServletRequest).thenReturn(false);
 
         // When: doFilter is called
