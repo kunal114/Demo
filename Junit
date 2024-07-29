@@ -1,12 +1,10 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
-
 import java.util.ArrayList;
 import java.util.List;
-
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 class THBetterTesterTest {
@@ -23,7 +21,7 @@ class THBetterTesterTest {
         pojoField = mock(PojoField.class);
         pojoFields = new ArrayList<>();
         pojoFields.add(pojoField);
-        
+
         // Set up PojoClass mock
         when(pojoClass.getPojoFields()).thenReturn(pojoFields);
 
@@ -34,28 +32,39 @@ class THBetterTesterTest {
 
     @Test
     void testRun_withGetterAndNonFinalField() throws Exception {
-        // Set up PojoField mock
-        when(pojoField.getName()).thenReturn("field");
-        when(pojoField.hasGetter()).thenReturn(true);
-        when(pojoField.isFinal()).thenReturn(false);
-        
-        // Set up RandomFactory mock
-        Object randomValue = new Object();
-        when(RandomFactory.getRandomValue(any())).thenReturn(randomValue);
+        try (MockedStatic<ValidationHelper> validationHelperMockedStatic = Mockito.mockStatic(ValidationHelper.class);
+             MockedStatic<RandomFactory> randomFactoryMockedStatic = Mockito.mockStatic(RandomFactory.class);
+             MockedStatic<IdentityHandlerStub> identityHandlerStubMockedStatic = Mockito.mockStatic(IdentityHandlerStub.class);
+             MockedStatic<Affirm> affirmMockedStatic = Mockito.mockStatic(Affirm.class)) {
+            
+            // Set up PojoField mock
+            when(pojoField.getName()).thenReturn("field");
+            when(pojoField.hasGetter()).thenReturn(true);
+            when(pojoField.isFinal()).thenReturn(false);
 
-        // Set up ValidationHelper mock
-        Object classInstance = new Object();
-        when(ValidationHelper.getBasicInstance(pojoClass)).thenReturn(classInstance);
+            // Set up PojoField get and invokeGetter methods
+            Object initialValue = new Object();
+            when(pojoField.get(any())).thenReturn(initialValue);
+            when(pojoField.invokeGetter(any())).thenReturn(initialValue);
 
-        // Run the tester
-        tester.run(pojoClass);
+            // Set up RandomFactory mock
+            Object randomValue = new Object();
+            randomFactoryMockedStatic.when(() -> RandomFactory.getRandomValue(any())).thenReturn(randomValue);
 
-        // Verify interactions
-        verify(pojoField).get(classInstance);
-        verify(pojoField).set(classInstance, randomValue);
-        verify(pojoField).invokeGetter(classInstance);
-        verify(IdentityHandlerStub.class, atLeastOnce()).registerIdentityHandlerStubForValue(randomValue);
-        verify(IdentityHandlerStub.class, atLeastOnce()).unregisterIdentityHandlerStubForValue(randomValue);
+            // Set up ValidationHelper mock
+            Object classInstance = new Object();
+            validationHelperMockedStatic.when(() -> ValidationHelper.getBasicInstance(any())).thenReturn(classInstance);
+
+            // Run the tester
+            tester.run(pojoClass);
+
+            // Verify interactions
+            verify(pojoField).get(classInstance);
+            verify(pojoField).set(classInstance, randomValue);
+            verify(pojoField).invokeGetter(classInstance);
+            identityHandlerStubMockedStatic.verify(() -> IdentityHandlerStub.registerIdentityHandlerStubForValue(randomValue));
+            identityHandlerStubMockedStatic.verify(() -> IdentityHandlerStub.unregisterIdentityHandlerStubForValue(randomValue));
+        }
     }
 
     @Test
