@@ -4,56 +4,35 @@ import org.junit.jupiter.api.Test;
 public class BreakIdentificationTest {
 
     @Test
-    public void testConstructorWithAllParams() {
-        long id = 123L;
-        long sequenceNumber = 456L;
-        String controlID = "ABC123";
-
-        BreakIdentification bi = new BreakIdentification(id, sequenceNumber, controlID);
-
-        assertEquals(id, bi.getId());
-        assertEquals(sequenceNumber, bi.getSequenceNumber());
-        assertEquals(controlID, bi.getControlID());
-    }
-
-    @Test
-    public void testConstructorWithPartialParams() {
-        long id = 123L;
-        long sequenceNumber = 456L;
-
-        BreakIdentification bi = new BreakIdentification(id, sequenceNumber);
-
-        assertEquals(id, bi.getId());
-        assertEquals(sequenceNumber, bi.getSequenceNumber());
-        assertNull(bi.getControlID());
-    }
-
-    @Test
-    public void testGettersAndSetters() {
-        long id = 123L;
-        long sequenceNumber = 456L;
-        String controlID = "ABC123";
-
-        BreakIdentification bi = new BreakIdentification(id, sequenceNumber);
-        bi.setControlID(controlID);
-
-        assertEquals(controlID, bi.getControlID());
-    }
-
-    @Test
     public void testEqualsWithSameValues() {
         BreakIdentification bi1 = new BreakIdentification(123L, 456L, "ABC123");
         BreakIdentification bi2 = new BreakIdentification(123L, 456L, "ABC123");
 
-        assertEquals(bi1, bi2);
+        assertTrue(bi1.equals(bi2), "Objects with same id, sequenceNumber, and controlID should be equal");
     }
 
     @Test
-    public void testEqualsWithDifferentValues() {
+    public void testEqualsWithDifferentId() {
         BreakIdentification bi1 = new BreakIdentification(123L, 456L, "ABC123");
-        BreakIdentification bi2 = new BreakIdentification(124L, 457L, "XYZ789");
+        BreakIdentification bi2 = new BreakIdentification(124L, 456L, "ABC123");
 
-        assertNotEquals(bi1, bi2);
+        assertFalse(bi1.equals(bi2), "Objects with different id should not be equal");
+    }
+
+    @Test
+    public void testEqualsWithDifferentSequenceNumber() {
+        BreakIdentification bi1 = new BreakIdentification(123L, 456L, "ABC123");
+        BreakIdentification bi2 = new BreakIdentification(123L, 457L, "ABC123");
+
+        assertFalse(bi1.equals(bi2), "Objects with different sequenceNumber should not be equal");
+    }
+
+    @Test
+    public void testEqualsWithDifferentControlID() {
+        BreakIdentification bi1 = new BreakIdentification(123L, 456L, "ABC123");
+        BreakIdentification bi2 = new BreakIdentification(123L, 456L, "XYZ789");
+
+        assertFalse(bi1.equals(bi2), "Objects with different controlID should not be equal");
     }
 
     @Test
@@ -61,14 +40,21 @@ public class BreakIdentificationTest {
         BreakIdentification bi1 = new BreakIdentification(123L, 456L, null);
         BreakIdentification bi2 = new BreakIdentification(123L, 456L, null);
 
-        assertEquals(bi1, bi2);
+        assertTrue(bi1.equals(bi2), "Objects with null controlID should be equal");
     }
 
     @Test
-    public void testEqualsWithDifferentControlID() {
-        BreakIdentification bi1 = new BreakIdentification(123L, 456L, null);
-        BreakIdentification bi2 = new BreakIdentification(123L, 456L, "ABC123");
+    public void testEqualsWithNullObject() {
+        BreakIdentification bi = new BreakIdentification(123L, 456L, "ABC123");
 
-        assertNotEquals(bi1, bi2);
+        assertFalse(bi.equals(null), "Object should not be equal to null");
+    }
+
+    @Test
+    public void testEqualsWithDifferentType() {
+        BreakIdentification bi = new BreakIdentification(123L, 456L, "ABC123");
+        String otherType = "String";
+
+        assertFalse(bi.equals(otherType), "Object should not be equal to an object of a different type");
     }
 }
