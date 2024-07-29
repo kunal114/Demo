@@ -1,10 +1,21 @@
+Let's take a more detailed approach to mocking and handling the dependencies, ensuring that all necessary parts are correctly set up.
+
+### Step-by-Step Approach:
+1. **Mock Dependencies**: Ensure all dependencies like `PojoClass`, `PojoField`, `ValidationHelper`, etc., are correctly mocked.
+2. **Use Mocked Static Methods Properly**: Ensure that static methods are mocked within a try-with-resources block to manage their scope.
+3. **Handle Constructor Issues**: If the `PojoClass` constructor is failing, mock its behavior as well.
+
+Here's a revised version of the test class with these considerations:
+
+```java
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 import org.mockito.Mockito;
+
 import java.util.ArrayList;
 import java.util.List;
-import static org.mockito.ArgumentMatchers.any;
+
 import static org.mockito.Mockito.*;
 
 class THBetterTesterTest {
@@ -100,3 +111,20 @@ class THBetterTesterTest {
         verify(pojoField, never()).invokeGetter(any());
     }
 }
+```
+
+### Additional Tips:
+1. **Check `PojoClass` and `PojoField` Implementation**:
+    - Ensure these classes are correctly defined and their methods (`getPojoFields`, `getName`, `hasGetter`, etc.) are correctly accessible.
+  
+2. **Handle Null Constructors**:
+    - If `PojoClass` has a specific constructor requirement, ensure that your mock handles this correctly. For example, if `PojoClass` requires parameters in its constructor, mock it accordingly.
+
+3. **Verify Static Mocking**:
+    - Make sure the static methods are correctly mocked within the scope of the try-with-resources block.
+
+4. **Use Correct Annotations and Dependencies**:
+    - Ensure you are using the correct annotations for JUnit 5 (`@Test`, `@BeforeEach`, etc.).
+    - Ensure Mockito and any other dependencies are correctly included in your project.
+
+If the issue persists, it would be helpful to see the actual implementation of `PojoClass` and `PojoField` to provide more specific guidance.
