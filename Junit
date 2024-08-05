@@ -1,36 +1,78 @@
-@Test
-public void test_getRestTemplate() throws Exception {
-    MockitoAnnotations.openMocks(this);
-    
-    try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class);
-         MockedStatic<FileInputStream> mockedFileInputStream = mockStatic(FileInputStream.class)) {
-        
-        Mockito.mockConstruction(SSLContextBuilder.class, (mock, context) -> {
-            when(mock.useProtocol(anyString())).thenReturn(mock);
-            when(mock.loadTrustMaterial(Mockito.any(KeyStore.class), Mockito.any(TrustSelfSignedStrategy.class))).thenReturn(mock);
-            when(mock.build()).thenReturn(sslContext);
-        });
-        
-        Mockito.mockConstruction(SSLConnectionSocketFactory.class);
-        
-        mockedKeyStore.when(() -> KeyStore.getInstance(anyString())).thenReturn(keyStore);
-        
-        String keystorePath = RestTemplateFactoryTest.class.getClassLoader().getResource("thapp-secure/appids.jks").getPath();
-        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", keystorePath);
-        
-        FileInputStream mockFileInputStream = mock(FileInputStream.class);
-        mockedFileInputStream.when(() -> new FileInputStream(keystorePath)).thenReturn(mockFileInputStream);
-        
-        when(secureCredential.getKeystorePassword()).thenReturn("changeit");
-        
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.*;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.RestTemplate;
+
+import javax.net.ssl.SSLContext;
+import java.io.FileInputStream;
+import java.security.KeyStore;
+import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.conn.ssl.TrustSelfSignedStrategy;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class RestTemplateFactoryTest {
+
+    @InjectMocks
+    private RestTemplateFactory restTemplateFactory;
+
+    @Mock
+    private SecureCredentialConfig secureCredential;
+
+    @Mock
+    private SSLContext sslContext;
+
+    @Mock
+    private KeyStore keyStore;
+
+    private static final String TEST_KEYSTORE_PATH = "/path/to/test/keystore.jks";
+
+    @BeforeEach
+    void setUp() {
+        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", TEST_KEYSTORE_PATH);
+    }
+
+    @Test
+    public void test_getRestTemplate() throws Exception {
+        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class);
+             MockedStatic<FileInputStream> mockedFileInputStream = mockStatic(FileInputStream.class)) {
+
+            Mockito.mockConstruction(SSLContextBuilder.class, (mock, context) -> {
+                when(mock.useProtocol(anyString())).thenReturn(mock);
+                when(mock.loadTrustMaterial(any(KeyStore.class), any(TrustSelfSignedStrategy.class))).thenReturn(mock);
+                when(mock.build()).thenReturn(sslContext);
+            });
+
+            Mockito.mockConstruction(SSLConnectionSocketFactory.class);
+
+            mockedKeyStore.when(() -> KeyStore.getInstance(anyString())).thenReturn(keyStore);
+
+            FileInputStream mockFileInputStream = mock(FileInputStream.class);
+            mockedFileInputStream.when(() -> new FileInputStream(TEST_KEYSTORE_PATH)).thenReturn(mockFileInputStream);
+
+            when(secureCredential.getKeystorePassword()).thenReturn("changeit");
+
+            RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+
+            assertNotNull(restTemplate);
+
+            mockedFileInputStream.verify(() -> new FileInputStream(TEST_KEYSTORE_PATH));
+            verify(keyStore).load(eq(mockFileInputStream), any(char[].class));
+        }
+    }
+
+    @Test
+    public void test_getRestTemplate_Exception() {
+        when(secureCredential.getKeystorePassword()).thenThrow(new RuntimeException("Test exception"));
+
         RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
-        
-        Assertions.assertNotNull(restTemplate);
-        
-        // Verify FileInputStream was created with the correct path
-        mockedFileInputStream.verify(() -> new FileInputStream(keystorePath));
-        
-        // Verify KeyStore.load was called with the mocked FileInputStream
-        verify(keyStore).load(eq(mockFileInputStream), any(char[].class));
+
+        assertNull(restTemplate);
     }
 }
