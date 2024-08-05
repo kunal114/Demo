@@ -30,9 +30,11 @@ class RestTemplateFactoryTest {
     @Mock
     private SSLContext mockSslContext;
 
+    private static final String TEST_KEYSTORE_PATH = "path/to/keystore.jks";
+
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", "path/to/keystore.jks");
+        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", TEST_KEYSTORE_PATH);
     }
 
     @Test
@@ -44,9 +46,9 @@ class RestTemplateFactoryTest {
              MockedStatic<SSLContext> sslContextMockedStatic = mockStatic(SSLContext.class);
              MockedStatic<FileInputStream> fileInputStreamMockedStatic = mockStatic(FileInputStream.class)) {
 
-            keyStoreMockedStatic.when(() -> KeyStore.getInstance(anyString())).thenReturn(mockKeyStore);
-            sslContextMockedStatic.when(() -> SSLContext.getInstance(anyString())).thenReturn(mockSslContext);
-            fileInputStreamMockedStatic.when(() -> new FileInputStream(anyString())).thenReturn(mock(FileInputStream.class));
+            keyStoreMockedStatic.when(() -> KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
+            sslContextMockedStatic.when(() -> SSLContext.getInstance("TLSv1.2")).thenReturn(mockSslContext);
+            fileInputStreamMockedStatic.when(() -> new FileInputStream(TEST_KEYSTORE_PATH)).thenReturn(mock(FileInputStream.class));
 
             // Act
             RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
@@ -55,6 +57,11 @@ class RestTemplateFactoryTest {
             assertNotNull(restTemplate);
             assertTrue(restTemplate.getMessageConverters().stream()
                     .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter));
+
+            // Verify
+            keyStoreMockedStatic.verify(() -> KeyStore.getInstance("JKS"));
+            sslContextMockedStatic.verify(() -> SSLContext.getInstance("TLSv1.2"));
+            fileInputStreamMockedStatic.verify(() -> new FileInputStream(TEST_KEYSTORE_PATH));
         }
     }
 
