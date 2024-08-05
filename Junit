@@ -1,79 +1,138 @@
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Cookie;
+import org.owasp.esapi.ESAPI;
+import org.owasp.esapi.Validator;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.client.RestTemplate;
 
-import javax.net.ssl.SSLContext;
-import java.io.FileInputStream;
-import java.security.KeyStore;
-import org.apache.http.ssl.SSLContextBuilder;
-import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
-import org.apache.http.conn.ssl.TrustSelfSignedStrategy;
-
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
 @ExtendWith(MockitoExtension.class)
-class RestTemplateFactoryTest {
-
-    @InjectMocks
-    private RestTemplateFactory restTemplateFactory;
+class YourClassNameTest {
 
     @Mock
-    private SecureCredentialConfig secureCredential;
+    private HttpServletRequest request;
 
     @Mock
-    private SSLContext sslContext;
+    private HttpServletResponse response;
 
     @Mock
-    private KeyStore keyStore;
+    private Validator validator;
 
-    private static final String TEST_KEYSTORE_PATH = "/path/to/test/keystore.jks";
+    @Mock
+    private EncryptDecryptAuthToken encryptDecryptAuthToken;
+
+    @Mock
+    private FileTypeEntitlementsCache fileTypeEntitlementsCache;
+
+    @Mock
+    private UserContextHolder userContextHolder;
+
+    @Mock
+    private TRSResources trsResources;
+
+    private YourClassName yourClass;
 
     @BeforeEach
     void setUp() {
-        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", TEST_KEYSTORE_PATH);
+        yourClass = new YourClassName();
+        MockitoAnnotations.openMocks(this);
+        
+        // Setup ESAPI validator mock
+        ESAPI.validator = validator;
     }
 
     @Test
-    public void test_getRestTemplate() throws Exception {
-        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class);
-             MockedStatic<FileInputStream> mockedFileInputStream = mockStatic(FileInputStream.class)) {
+    void testDoServeFileUpload_ValidCSRFToken() throws Exception {
+        // Arrange
+        String csrfToken = "validToken";
+        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
+        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
+        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn(csrfToken);
+        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
+        when(request.getParameter("fileType")).thenReturn("validFileType");
+        when(validator.getValidInput(anyString(), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn("validFileType");
+        when(userContextHolder.get().getUserId()).thenReturn("testUser");
+        when(fileTypeEntitlementsCache.hasEntitledImportFileTypes("testUser")).thenReturn(true);
+        when(request.getInputStream()).thenReturn(mock(ServletInputStream.class));
 
-            mockedKeyStore.when(() -> KeyStore.getInstance(anyString())).thenReturn(keyStore);
-            
-            FileInputStream mockFileInputStream = mock(FileInputStream.class);
-            mockedFileInputStream.when(() -> new FileInputStream(TEST_KEYSTORE_PATH)).thenReturn(mockFileInputStream);
+        // Act
+        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
 
-            when(secureCredential.getKeystorePassword()).thenReturn("changeit");
-
-            try (MockedConstruction<SSLContextBuilder> mockedSslContextBuilder = mockConstruction(SSLContextBuilder.class,
-                    (mock, context) -> {
-                        when(mock.useProtocol(anyString())).thenReturn(mock);
-                        when(mock.loadTrustMaterial(any(KeyStore.class), any(TrustSelfSignedStrategy.class))).thenReturn(mock);
-                        when(mock.build()).thenReturn(sslContext);
-                    });
-                 MockedConstruction<SSLConnectionSocketFactory> mockedSslConnectionSocketFactory = mockConstruction(SSLConnectionSocketFactory.class)) {
-
-                RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
-
-                assertNotNull(restTemplate);
-
-                mockedFileInputStream.verify(() -> new FileInputStream(TEST_KEYSTORE_PATH));
-                verify(keyStore).load(eq(mockFileInputStream), any(char[].class));
-            }
-        }
+        // Assert
+        assertNotNull(response);
+        assertEquals(200, response.getCode());
+        assertNotNull(response.getFileId());
     }
 
     @Test
-    public void test_getRestTemplate_Exception() {
-        when(secureCredential.getKeystorePassword()).thenThrow(new RuntimeException("Test exception"));
+    void testDoServeFileUpload_InvalidCSRFToken() throws Exception {
+        // Arrange
+        String csrfToken = "validToken";
+        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
+        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
+        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn("invalidToken");
+        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
 
-        RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+        // Act
+        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
 
-        assertNull(restTemplate);
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpServletResponse.SC_UNAUTHORIZED, response.getCode());
+        assertTrue(response.getMsg().contains("Connection Lost"));
     }
+
+    @Test
+    void testDoServeFileUpload_NoEntitlement() throws Exception {
+        // Arrange
+        String csrfToken = "validToken";
+        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
+        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
+        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn(csrfToken);
+        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
+        when(request.getParameter("fileType")).thenReturn("validFileType");
+        when(validator.getValidInput(anyString(), anyString(), anyString(), anyInt(), anyBoolean()))
+                .thenReturn("validFileType");
+        when(userContextHolder.get().getUserId()).thenReturn("testUser");
+        when(fileTypeEntitlementsCache.hasEntitledImportFileTypes("testUser")).thenReturn(false);
+
+        // Act
+        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
+
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpServletResponse.SC_UNAUTHORIZED, response.getCode());
+        assertTrue(response.getMsg().contains("You are not entitled to import files"));
+    }
+
+    @Test
+    void testDoServeFileUpload_InvalidMultipartContent() throws Exception {
+        // Arrange
+        String csrfToken = "validToken";
+        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
+        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
+        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn(csrfToken);
+        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
+        
+        // Simulate non-multipart content
+        when(request.getContentType()).thenReturn("application/x-www-form-urlencoded");
+
+        // Act
+        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
+
+        // Assert
+        assertNotNull(response);
+        assertEquals(HttpServletResponse.SC_BAD_REQUEST, response.getCode());
+        assertTrue(response.getMsg().contains("Import failed due to an error in the formatting"));
+    }
+
+    // Add more tests for other scenarios...
 }
