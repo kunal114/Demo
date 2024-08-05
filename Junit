@@ -3,9 +3,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.MockedStatic;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
+
+import javax.net.ssl.SSLContext;
+import java.io.FileInputStream;
+import java.security.KeyStore;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -19,29 +24,44 @@ class RestTemplateFactoryTest {
     @Mock
     private SecureCredentialConfig secureCredentialConfig;
 
+    @Mock
+    private KeyStore mockKeyStore;
+
+    @Mock
+    private SSLContext mockSslContext;
+
     @BeforeEach
     void setUp() {
         ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", "path/to/keystore.jks");
     }
 
     @Test
-    void testGetRestTemplate_Success() {
+    void testGetRestTemplate_Success() throws Exception {
         // Arrange
         when(secureCredentialConfig.getKeystorePassword()).thenReturn("password");
 
-        // Act
-        RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+        try (MockedStatic<KeyStore> keyStoreMockedStatic = mockStatic(KeyStore.class);
+             MockedStatic<SSLContext> sslContextMockedStatic = mockStatic(SSLContext.class);
+             MockedStatic<FileInputStream> fileInputStreamMockedStatic = mockStatic(FileInputStream.class)) {
 
-        // Assert
-        assertNotNull(restTemplate);
-        assertTrue(restTemplate.getMessageConverters().stream()
-                .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter));
+            keyStoreMockedStatic.when(() -> KeyStore.getInstance(anyString())).thenReturn(mockKeyStore);
+            sslContextMockedStatic.when(() -> SSLContext.getInstance(anyString())).thenReturn(mockSslContext);
+            fileInputStreamMockedStatic.when(() -> new FileInputStream(anyString())).thenReturn(mock(FileInputStream.class));
+
+            // Act
+            RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
+
+            // Assert
+            assertNotNull(restTemplate);
+            assertTrue(restTemplate.getMessageConverters().stream()
+                    .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter));
+        }
     }
 
     @Test
     void testGetRestTemplate_Exception() {
         // Arrange
-        when(secureCredentialConfig.getKeystorePassword()).thenReturn("invalidPassword");
+        when(secureCredentialConfig.getKeystorePassword()).thenThrow(new RuntimeException("Test exception"));
 
         // Act
         RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
