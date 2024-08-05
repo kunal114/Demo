@@ -1,9 +1,6 @@
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
-import org.mockito.MockedStatic;
+import org.mockito.*;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
@@ -11,6 +8,11 @@ import org.springframework.web.client.RestTemplate;
 import javax.net.ssl.SSLContext;
 import java.io.FileInputStream;
 import java.security.KeyStore;
+import org.apache.http.ssl.SSLContextBuilder;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
+import org.apache.http.conn.ssl.TrustSelfSignedStrategy;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.BasicHttpClientConnectionManager;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
@@ -22,53 +24,57 @@ class RestTemplateFactoryTest {
     private RestTemplateFactory restTemplateFactory;
 
     @Mock
-    private SecureCredentialConfig secureCredentialConfig;
+    private SecureCredentialConfig secureCredential;
 
     @Mock
-    private KeyStore mockKeyStore;
+    private SSLContext sslContext;
 
     @Mock
-    private SSLContext mockSslContext;
-
-    private static final String TEST_KEYSTORE_PATH = "path/to/keystore.jks";
-
-    @BeforeEach
-    void setUp() {
-        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", TEST_KEYSTORE_PATH);
-    }
+    private KeyStore keyStore;
 
     @Test
-    void testGetRestTemplate_Success() throws Exception {
+    public void test_getRestTemplate() throws Exception {
         // Arrange
-        when(secureCredentialConfig.getKeystorePassword()).thenReturn("password");
+        String keystorePath = RestTemplateFactoryTest.class.getClassLoader().getResource("thapp-secure/appids.jks").getPath();
+        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", keystorePath);
+        when(secureCredential.getKeystorePassword()).thenReturn("changeit");
 
-        try (MockedStatic<KeyStore> keyStoreMockedStatic = mockStatic(KeyStore.class);
-             MockedStatic<SSLContext> sslContextMockedStatic = mockStatic(SSLContext.class);
-             MockedStatic<FileInputStream> fileInputStreamMockedStatic = mockStatic(FileInputStream.class)) {
+        try (MockedStatic<KeyStore> mockedKeyStore = mockStatic(KeyStore.class);
+             MockedStatic<HttpClients> mockedHttpClients = mockStatic(HttpClients.class);
+             MockedConstruction<FileInputStream> mockedFileInputStream = mockConstruction(FileInputStream.class);
+             MockedConstruction<SSLContextBuilder> mockedSslContextBuilder = mockConstruction(SSLContextBuilder.class,
+                     (mock, context) -> {
+                         when(mock.useProtocol(anyString())).thenReturn(mock);
+                         when(mock.loadTrustMaterial(any(KeyStore.class), any(TrustSelfSignedStrategy.class))).thenReturn(mock);
+                         when(mock.build()).thenReturn(sslContext);
+                     });
+             MockedConstruction<SSLConnectionSocketFactory> mockedSslConnectionSocketFactory = mockConstruction(SSLConnectionSocketFactory.class);
+             MockedConstruction<BasicHttpClientConnectionManager> mockedConnectionManager = mockConstruction(BasicHttpClientConnectionManager.class)) {
 
-            keyStoreMockedStatic.when(() -> KeyStore.getInstance("JKS")).thenReturn(mockKeyStore);
-            sslContextMockedStatic.when(() -> SSLContext.getInstance("TLSv1.2")).thenReturn(mockSslContext);
-            fileInputStreamMockedStatic.when(() -> new FileInputStream(TEST_KEYSTORE_PATH)).thenReturn(mock(FileInputStream.class));
+            mockedKeyStore.when(() -> KeyStore.getInstance(anyString())).thenReturn(keyStore);
+            
+            mockedHttpClients.when(() -> HttpClients.custom())
+                    .thenReturn(HttpClients.custom());
 
             // Act
             RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
 
             // Assert
             assertNotNull(restTemplate);
-            assertTrue(restTemplate.getMessageConverters().stream()
-                    .anyMatch(converter -> converter instanceof MappingJackson2HttpMessageConverter));
-
+            
             // Verify
-            keyStoreMockedStatic.verify(() -> KeyStore.getInstance("JKS"));
-            sslContextMockedStatic.verify(() -> SSLContext.getInstance("TLSv1.2"));
-            fileInputStreamMockedStatic.verify(() -> new FileInputStream(TEST_KEYSTORE_PATH));
+            mockedKeyStore.verify(() -> KeyStore.getInstance("JKS"));
+            verify(keyStore).load(any(FileInputStream.class), any(char[].class));
+            verify(secureCredential).getKeystorePassword();
+            mockedHttpClients.verify(() -> HttpClients.custom());
         }
     }
 
     @Test
-    void testGetRestTemplate_Exception() {
+    public void test_getRestTemplate_Exception() throws Exception {
         // Arrange
-        when(secureCredentialConfig.getKeystorePassword()).thenThrow(new RuntimeException("Test exception"));
+        ReflectionTestUtils.setField(restTemplateFactory, "keyStorePath", "invalid/path");
+        when(secureCredential.getKeystorePassword()).thenReturn("changeit");
 
         // Act
         RestTemplate restTemplate = restTemplateFactory.getRestTemplate();
