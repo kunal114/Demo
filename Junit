@@ -1,138 +1,90 @@
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import jakarta.servlet.http.Cookie;
-import org.owasp.esapi.ESAPI;
-import org.owasp.esapi.Validator;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.junit.jupiter.MockitoExtension;
+ Certainly. To test a private method using JUnit 5, we need to use reflection or make the method package-private for testing purposes. I'll show you both approaches.
 
-import static org.mockito.Mockito.*;
+Let's assume this method is in a class called `RestTemplateConfig`. Here's a JUnit 5 test class for this method:
+
+```java
+import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestTemplate;
+import java.lang.reflect.Method;
 import static org.junit.jupiter.api.Assertions.*;
 
-@ExtendWith(MockitoExtension.class)
-class YourClassNameTest {
+class RestTemplateConfigTest {
 
-    @Mock
-    private HttpServletRequest request;
+    @Test
+    void testGetRestTemplate_UsingReflection() throws Exception {
+        RestTemplateConfig config = new RestTemplateConfig();
+        Method method = RestTemplateConfig.class.getDeclaredMethod("getRestTemplate");
+        method.setAccessible(true);
 
-    @Mock
-    private HttpServletResponse response;
+        RestTemplate result = (RestTemplate) method.invoke(config);
 
-    @Mock
-    private Validator validator;
-
-    @Mock
-    private EncryptDecryptAuthToken encryptDecryptAuthToken;
-
-    @Mock
-    private FileTypeEntitlementsCache fileTypeEntitlementsCache;
-
-    @Mock
-    private UserContextHolder userContextHolder;
-
-    @Mock
-    private TRSResources trsResources;
-
-    private YourClassName yourClass;
-
-    @BeforeEach
-    void setUp() {
-        yourClass = new YourClassName();
-        MockitoAnnotations.openMocks(this);
-        
-        // Setup ESAPI validator mock
-        ESAPI.validator = validator;
+        assertNotNull(result);
+        // Add more assertions as needed
     }
 
     @Test
-    void testDoServeFileUpload_ValidCSRFToken() throws Exception {
-        // Arrange
-        String csrfToken = "validToken";
-        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
-        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
-        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn(csrfToken);
-        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
-        when(request.getParameter("fileType")).thenReturn("validFileType");
-        when(validator.getValidInput(anyString(), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn("validFileType");
-        when(userContextHolder.get().getUserId()).thenReturn("testUser");
-        when(fileTypeEntitlementsCache.hasEntitledImportFileTypes("testUser")).thenReturn(true);
-        when(request.getInputStream()).thenReturn(mock(ServletInputStream.class));
+    void testGetRestTemplate_ExceptionHandling() throws Exception {
+        RestTemplateConfig config = new RestTemplateConfig() {
+            @Override
+            protected RestTemplate getRestTemplate() throws Exception {
+                throw new Exception("Test exception");
+            }
+        };
 
-        // Act
-        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
+        Method method = RestTemplateConfig.class.getDeclaredMethod("getRestTemplate");
+        method.setAccessible(true);
 
-        // Assert
-        assertNotNull(response);
-        assertEquals(200, response.getCode());
-        assertNotNull(response.getFileId());
+        RestTemplate result = (RestTemplate) method.invoke(config);
+
+        assertNull(result);
+        // Verify that the exception was logged (you might need to use a mocking framework for the logger)
     }
-
-    @Test
-    void testDoServeFileUpload_InvalidCSRFToken() throws Exception {
-        // Arrange
-        String csrfToken = "validToken";
-        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
-        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
-        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn("invalidToken");
-        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
-
-        // Act
-        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpServletResponse.SC_UNAUTHORIZED, response.getCode());
-        assertTrue(response.getMsg().contains("Connection Lost"));
-    }
-
-    @Test
-    void testDoServeFileUpload_NoEntitlement() throws Exception {
-        // Arrange
-        String csrfToken = "validToken";
-        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
-        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
-        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn(csrfToken);
-        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
-        when(request.getParameter("fileType")).thenReturn("validFileType");
-        when(validator.getValidInput(anyString(), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn("validFileType");
-        when(userContextHolder.get().getUserId()).thenReturn("testUser");
-        when(fileTypeEntitlementsCache.hasEntitledImportFileTypes("testUser")).thenReturn(false);
-
-        // Act
-        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpServletResponse.SC_UNAUTHORIZED, response.getCode());
-        assertTrue(response.getMsg().contains("You are not entitled to import files"));
-    }
-
-    @Test
-    void testDoServeFileUpload_InvalidMultipartContent() throws Exception {
-        // Arrange
-        String csrfToken = "validToken";
-        Cookie cookie = new Cookie("CSRF_COOKIE_FILE_UPLOAD", "encryptedToken");
-        when(request.getCookies()).thenReturn(new Cookie[]{cookie});
-        when(request.getAttribute("CSRF_AUTH_TOKEN")).thenReturn(csrfToken);
-        when(encryptDecryptAuthToken.decryptCsrfAuthToken("encryptedToken")).thenReturn(csrfToken);
-        
-        // Simulate non-multipart content
-        when(request.getContentType()).thenReturn("application/x-www-form-urlencoded");
-
-        // Act
-        ImportFileResponse response = yourClass.doServeFileUpload(request, this.response);
-
-        // Assert
-        assertNotNull(response);
-        assertEquals(HttpServletResponse.SC_BAD_REQUEST, response.getCode());
-        assertTrue(response.getMsg().contains("Import failed due to an error in the formatting"));
-    }
-
-    // Add more tests for other scenarios...
 }
+```
+
+This test class includes two test methods:
+
+1. `testGetRestTemplate_UsingReflection()`: This test uses reflection to access and invoke the private method. It then asserts that the returned RestTemplate is not null.
+
+2. `testGetRestTemplate_ExceptionHandling()`: This test creates an anonymous subclass of RestTemplateConfig to force an exception, testing the exception handling branch of the method.
+
+Alternatively, if you're willing to make the method package-private for testing, you can simplify the tests:
+
+```java
+import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestTemplate;
+import static org.junit.jupiter.api.Assertions.*;
+
+class RestTemplateConfigTest {
+
+    @Test
+    void testGetRestTemplate() {
+        RestTemplateConfig config = new RestTemplateConfig();
+        RestTemplate result = config.getRestTemplate();
+
+        assertNotNull(result);
+        // Add more assertions as needed
+    }
+
+    @Test
+    void testGetRestTemplate_ExceptionHandling() {
+        RestTemplateConfig config = new RestTemplateConfig() {
+            @Override
+            RestTemplate getRestTemplate() {
+                throw new RuntimeException("Test exception");
+            }
+        };
+
+        RestTemplate result = config.getRestTemplate();
+
+        assertNull(result);
+        // Verify that the exception was logged (you might need to use a mocking framework for the logger)
+    }
+}
+```
+
+For this approach to work, you'd need to change the method visibility in the original class from `private` to package-private (no modifier).
+
+Remember to add necessary imports and adjust the class name if needed. Also, you might want to add more specific assertions based on the expected behavior of your RestTemplate configuration.
+
+Would you like me to explain any part of these test cases in more detail?
