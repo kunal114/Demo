@@ -1,90 +1,52 @@
- Certainly. To test a private method using JUnit 5, we need to use reflection or make the method package-private for testing purposes. I'll show you both approaches.
+import requests
+import pandas as pd
 
-Let's assume this method is in a class called `RestTemplateConfig`. Here's a JUnit 5 test class for this method:
+# Function to download CSV from a URL
+def download_csv(url, filename):
+    response = requests.get(url)
+    response.raise_for_status()  # Check for HTTP errors
 
-```java
-import org.junit.jupiter.api.Test;
-import org.springframework.web.client.RestTemplate;
-import java.lang.reflect.Method;
-import static org.junit.jupiter.api.Assertions.*;
+    # Save CSV file to disk
+    with open(filename, 'wb') as file:
+        file.write(response.content)
+    print(f"Downloaded {filename}")
 
-class RestTemplateConfigTest {
+# Download CSV files from two endpoints
+url1 = 'https://example.com/endpoint1.csv'  # Replace with actual URL
+url2 = 'https://example.com/endpoint2.csv'  # Replace with actual URL
 
-    @Test
-    void testGetRestTemplate_UsingReflection() throws Exception {
-        RestTemplateConfig config = new RestTemplateConfig();
-        Method method = RestTemplateConfig.class.getDeclaredMethod("getRestTemplate");
-        method.setAccessible(true);
+filename1 = 'file1.csv'
+filename2 = 'file2.csv'
 
-        RestTemplate result = (RestTemplate) method.invoke(config);
+download_csv(url1, filename1)
+download_csv(url2, filename2)
 
-        assertNotNull(result);
-        // Add more assertions as needed
-    }
+# Load CSV files into pandas DataFrames
+df1 = pd.read_csv(filename1)
+df2 = pd.read_csv(filename2)
 
-    @Test
-    void testGetRestTemplate_ExceptionHandling() throws Exception {
-        RestTemplateConfig config = new RestTemplateConfig() {
-            @Override
-            protected RestTemplate getRestTemplate() throws Exception {
-                throw new Exception("Test exception");
-            }
-        };
+# Function to reconcile the two DataFrames
+def reconcile_data(df1, df2, key_columns):
+    # Find rows in df1 but not in df2
+    diff1_to_2 = pd.merge(df1, df2, how='outer', on=key_columns, indicator=True).query('_merge == "left_only"').drop('_merge', axis=1)
 
-        Method method = RestTemplateConfig.class.getDeclaredMethod("getRestTemplate");
-        method.setAccessible(true);
+    # Find rows in df2 but not in df1
+    diff2_to_1 = pd.merge(df1, df2, how='outer', on=key_columns, indicator=True).query('_merge == "right_only"').drop('_merge', axis=1)
 
-        RestTemplate result = (RestTemplate) method.invoke(config);
+    # Check for differences
+    if diff1_to_2.empty and diff2_to_1.empty:
+        print("The two files are identical.")
+    else:
+        print("Differences found:")
+        if not diff1_to_2.empty:
+            print("\nRows in file1 but not in file2:")
+            print(diff1_to_2)
+        if not diff2_to_1.empty:
+            print("\nRows in file2 but not in file1:")
+            print(diff2_to_1)
 
-        assertNull(result);
-        // Verify that the exception was logged (you might need to use a mocking framework for the logger)
-    }
-}
-```
+# Specify the key columns for reconciliation
+key_columns = ['column1', 'column2']  # Replace with actual column names
 
-This test class includes two test methods:
-
-1. `testGetRestTemplate_UsingReflection()`: This test uses reflection to access and invoke the private method. It then asserts that the returned RestTemplate is not null.
-
-2. `testGetRestTemplate_ExceptionHandling()`: This test creates an anonymous subclass of RestTemplateConfig to force an exception, testing the exception handling branch of the method.
-
-Alternatively, if you're willing to make the method package-private for testing, you can simplify the tests:
-
-```java
-import org.junit.jupiter.api.Test;
-import org.springframework.web.client.RestTemplate;
-import static org.junit.jupiter.api.Assertions.*;
-
-class RestTemplateConfigTest {
-
-    @Test
-    void testGetRestTemplate() {
-        RestTemplateConfig config = new RestTemplateConfig();
-        RestTemplate result = config.getRestTemplate();
-
-        assertNotNull(result);
-        // Add more assertions as needed
-    }
-
-    @Test
-    void testGetRestTemplate_ExceptionHandling() {
-        RestTemplateConfig config = new RestTemplateConfig() {
-            @Override
-            RestTemplate getRestTemplate() {
-                throw new RuntimeException("Test exception");
-            }
-        };
-
-        RestTemplate result = config.getRestTemplate();
-
-        assertNull(result);
-        // Verify that the exception was logged (you might need to use a mocking framework for the logger)
-    }
-}
-```
-
-For this approach to work, you'd need to change the method visibility in the original class from `private` to package-private (no modifier).
-
-Remember to add necessary imports and adjust the class name if needed. Also, you might want to add more specific assertions based on the expected behavior of your RestTemplate configuration.
-
-Would you like me to explain any part of these test cases in more detail?
+# Perform reconciliation
+reconcile_data(df1, df2, key_columns)
