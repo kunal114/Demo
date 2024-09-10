@@ -2,43 +2,28 @@ import os
 import shutil
 from pathlib import Path
 
-def pick_and_copy_file():
+def copy_specific_file(filename):
     # Get the path to the Downloads folder
     downloads_path = str(Path.home() / "Downloads")
     
     # Get the current directory
     current_dir = os.getcwd()
     
-    # List all files in the Downloads folder
-    files = os.listdir(downloads_path)
-    
-    # Display the list of files
-    print("Files in Downloads folder:")
-    for i, file in enumerate(files):
-        print(f"{i + 1}. {file}")
-    
-    # Ask the user to choose a file
-    while True:
-        try:
-            choice = int(input("Enter the number of the file you want to copy: ")) - 1
-            if 0 <= choice < len(files):
-                selected_file = files[choice]
-                break
-            else:
-                print("Invalid choice. Please try again.")
-        except ValueError:
-            print("Please enter a valid number.")
-    
-    # Construct the full path of the selected file
-    source_path = os.path.join(downloads_path, selected_file)
+    # Construct the full path of the source file
+    source_path = os.path.join(downloads_path, filename)
     
     # Construct the destination path in the current directory
-    dest_path = os.path.join(current_dir, selected_file)
+    dest_path = os.path.join(current_dir, filename)
     
-    # Copy the file
-    shutil.copy2(source_path, dest_path)
-    
-    print(f"File '{selected_file}' has been copied to the current directory.")
+    # Check if the file exists in the Downloads folder
+    if os.path.exists(source_path):
+        # Copy the file
+        shutil.copy2(source_path, dest_path)
+        print(f"File '{filename}' has been copied from Downloads to the current directory.")
+    else:
+        print(f"Error: File '{filename}' not found in the Downloads folder.")
 
 if __name__ == "__main__":
-    pick_and_copy_file()
+    # Specify the filename you want to copy
+    specific_file = "example.txt"  # Replace with the actual filename you're looking for
+    copy_specific_file(specific_file)
