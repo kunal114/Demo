@@ -1,52 +1,44 @@
-import requests
-import pandas as pd
+import os
+import shutil
+from pathlib import Path
 
-# Function to download CSV from a URL
-def download_csv(url, filename):
-    response = requests.get(url)
-    response.raise_for_status()  # Check for HTTP errors
+def pick_and_copy_file():
+    # Get the path to the Downloads folder
+    downloads_path = str(Path.home() / "Downloads")
+    
+    # Get the current directory
+    current_dir = os.getcwd()
+    
+    # List all files in the Downloads folder
+    files = os.listdir(downloads_path)
+    
+    # Display the list of files
+    print("Files in Downloads folder:")
+    for i, file in enumerate(files):
+        print(f"{i + 1}. {file}")
+    
+    # Ask the user to choose a file
+    while True:
+        try:
+            choice = int(input("Enter the number of the file you want to copy: ")) - 1
+            if 0 <= choice < len(files):
+                selected_file = files[choice]
+                break
+            else:
+                print("Invalid choice. Please try again.")
+        except ValueError:
+            print("Please enter a valid number.")
+    
+    # Construct the full path of the selected file
+    source_path = os.path.join(downloads_path, selected_file)
+    
+    # Construct the destination path in the current directory
+    dest_path = os.path.join(current_dir, selected_file)
+    
+    # Copy the file
+    shutil.copy2(source_path, dest_path)
+    
+    print(f"File '{selected_file}' has been copied to the current directory.")
 
-    # Save CSV file to disk
-    with open(filename, 'wb') as file:
-        file.write(response.content)
-    print(f"Downloaded {filename}")
-
-# Download CSV files from two endpoints
-url1 = 'https://example.com/endpoint1.csv'  # Replace with actual URL
-url2 = 'https://example.com/endpoint2.csv'  # Replace with actual URL
-
-filename1 = 'file1.csv'
-filename2 = 'file2.csv'
-
-download_csv(url1, filename1)
-download_csv(url2, filename2)
-
-# Load CSV files into pandas DataFrames
-df1 = pd.read_csv(filename1)
-df2 = pd.read_csv(filename2)
-
-# Function to reconcile the two DataFrames
-def reconcile_data(df1, df2, key_columns):
-    # Find rows in df1 but not in df2
-    diff1_to_2 = pd.merge(df1, df2, how='outer', on=key_columns, indicator=True).query('_merge == "left_only"').drop('_merge', axis=1)
-
-    # Find rows in df2 but not in df1
-    diff2_to_1 = pd.merge(df1, df2, how='outer', on=key_columns, indicator=True).query('_merge == "right_only"').drop('_merge', axis=1)
-
-    # Check for differences
-    if diff1_to_2.empty and diff2_to_1.empty:
-        print("The two files are identical.")
-    else:
-        print("Differences found:")
-        if not diff1_to_2.empty:
-            print("\nRows in file1 but not in file2:")
-            print(diff1_to_2)
-        if not diff2_to_1.empty:
-            print("\nRows in file2 but not in file1:")
-            print(diff2_to_1)
-
-# Specify the key columns for reconciliation
-key_columns = ['column1', 'column2']  # Replace with actual column names
-
-# Perform reconciliation
-reconcile_data(df1, df2, key_columns)
+if __name__ == "__main__":
+    pick_and_copy_file()
