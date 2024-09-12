@@ -1,29 +1,35 @@
-import os
-import shutil
-from pathlib import Path
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.junit.jupiter.SpringExtension;
 
-def copy_specific_file(filename):
-    # Get the path to the Downloads folder
-    downloads_path = str(Path.home() / "Downloads")
-    
-    # Get the current directory
-    current_dir = os.getcwd()
-    
-    # Construct the full path of the source file
-    source_path = os.path.join(downloads_path, filename)
-    
-    # Construct the destination path in the current directory
-    dest_path = os.path.join(current_dir, filename)
-    
-    # Check if the file exists in the Downloads folder
-    if os.path.exists(source_path):
-        # Copy the file
-        shutil.copy2(source_path, dest_path)
-        print(f"File '{filename}' has been copied from Downloads to the current directory.")
-    else:
-        print(f"Error: File '{filename}' not found in the Downloads folder.")
+import static org.junit.jupiter.api.Assertions.*;
 
-if __name__ == "__main__":
-    # Specify the filename you want to copy
-    specific_file = "example.txt"  # Replace with the actual filename you're looking for
-    copy_specific_file(specific_file)
+@ExtendWith(SpringExtension.class)
+@SpringBootTest
+@Import(SecurityConfiguration.class)
+@ActiveProfiles("taws")
+public class SecurityConfigurationTest {
+
+    @Autowired
+    private SecurityConfiguration securityConfiguration;
+
+    @Test
+    public void testFilterChain() throws Exception {
+        HttpSecurity http = new HttpSecurity(null, null, null);
+        SecurityFilterChain filterChain = securityConfiguration.filterChain(http);
+
+        assertNotNull(filterChain);
+
+        // Test that all requests are permitted
+        assertTrue(http.getAuthorizeHttpRequests().getMatchers().contains(AnyRequestMatcher.INSTANCE));
+
+        // Test that CSRF is disabled
+        assertFalse(http.getConfigurer(CsrfConfigurer.class).isEnabled());
+    }
+}
