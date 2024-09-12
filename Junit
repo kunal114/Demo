@@ -1,35 +1,67 @@
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AuthorizeHttpRequestsConfigurer;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 @ExtendWith(SpringExtension.class)
-@SpringBootTest
-@Import(SecurityConfiguration.class)
+@ContextConfiguration
 @ActiveProfiles("taws")
 public class SecurityConfigurationTest {
+
+    @Configuration
+    static class ContextConfiguration {
+        @Bean
+        public SecurityConfiguration securityConfiguration() {
+            return new SecurityConfiguration();
+        }
+    }
 
     @Autowired
     private SecurityConfiguration securityConfiguration;
 
+    private HttpSecurity httpSecurity;
+
+    @BeforeEach
+    public void setup() {
+        httpSecurity = mock(HttpSecurity.class, RETURNS_SELF);
+    }
+
     @Test
     public void testFilterChain() throws Exception {
-        HttpSecurity http = new HttpSecurity(null, null, null);
-        SecurityFilterChain filterChain = securityConfiguration.filterChain(http);
+        // Mock the authorize requests
+        AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry authorizeRequests = 
+            mock(AuthorizeHttpRequestsConfigurer.AuthorizationManagerRequestMatcherRegistry.class);
+        when(httpSecurity.authorizeHttpRequests()).thenReturn(authorizeRequests);
+        when(authorizeRequests.anyRequest()).thenReturn(mock(AuthorizeHttpRequestsConfigurer.AuthorizedUrl.class));
 
+        // Mock the CSRF configuration
+        when(httpSecurity.csrf()).thenReturn(mock(HttpSecurity.CsrfConfigurer.class));
+
+        // Call the method under test
+        SecurityFilterChain filterChain = securityConfiguration.filterChain(httpSecurity);
+
+        // Verify that the filter chain is built
+        verify(httpSecurity).build();
+
+        // Verify that all requests are permitted
+        verify(authorizeRequests).anyRequest();
+        verify(authorizeRequests.anyRequest()).permitAll();
+
+        // Verify that CSRF is disabled
+        verify(httpSecurity.csrf()).disable();
+
+        // Assert that the filter chain is not null
         assertNotNull(filterChain);
-
-        // Test that all requests are permitted
-        assertTrue(http.getAuthorizeHttpRequests().getMatchers().contains(AnyRequestMatcher.INSTANCE));
-
-        // Test that CSRF is disabled
-        assertFalse(http.getConfigurer(CsrfConfigurer.class).isEnabled());
     }
 }
