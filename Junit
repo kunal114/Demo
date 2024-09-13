@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import os
+import webbrowser
 
 def compare_dataframes(df1, df2):
     # Find rows in df1 but not in df2
@@ -12,50 +12,63 @@ def compare_dataframes(df1, df2):
     return diff1_to_2, diff2_to_1
 
 def main():
-    st.title("CSV Comparison App")
+    st.title("CSV Download and Comparison App")
 
-    st.write("Upload two CSV files to compare them.")
+    # URL for the CSV file
+    url = 'https://data-insights.galacloud.joechase.net/extractor/query?gu36-00043be6-0773-4327-6351-45653chay'
 
-    file1 = st.file_uploader("Choose the first CSV file", type="csv")
-    file2 = st.file_uploader("Choose the second CSV file", type="csv")
+    st.write(f"Step 1: Download the CSV file from the following URL:")
+    st.write(url)
 
-    if file1 and file2:
-        df1 = pd.read_csv(file1)
-        df2 = pd.read_csv(file2)
+    if st.button("Open URL to download CSV"):
+        webbrowser.open(url)
+        st.success("URL opened in a new tab. Please download the CSV file.")
 
-        st.write("### First CSV Preview")
+    st.write("Step 2: Upload the downloaded CSV file")
+    uploaded_file = st.file_uploader("Choose the CSV file you just downloaded", type="csv")
+
+    if uploaded_file is not None:
+        df1 = pd.read_csv(uploaded_file)
+
+        st.write("### CSV Preview")
         st.write(df1.head())
 
-        st.write("### Second CSV Preview")
-        st.write(df2.head())
+        st.write("Step 3: Upload a second CSV file to compare")
+        file2 = st.file_uploader("Choose the second CSV file", type="csv")
 
-        if st.button("Compare CSVs"):
-            diff1_to_2, diff2_to_1 = compare_dataframes(df1, df2)
+        if file2 is not None:
+            df2 = pd.read_csv(file2)
 
-            st.write("### Rows in first CSV but not in second CSV")
-            st.write(diff1_to_2)
+            st.write("### Second CSV Preview")
+            st.write(df2.head())
 
-            st.write("### Rows in second CSV but not in first CSV")
-            st.write(diff2_to_1)
+            if st.button("Compare CSVs"):
+                diff1_to_2, diff2_to_1 = compare_dataframes(df1, df2)
 
-            # Option to download the comparison results
-            if not diff1_to_2.empty:
-                csv1 = diff1_to_2.to_csv(index=False)
-                st.download_button(
-                    label="Download rows unique to first CSV",
-                    data=csv1,
-                    file_name="diff1_to_2.csv",
-                    mime="text/csv",
-                )
+                st.write("### Rows in first CSV but not in second CSV")
+                st.write(diff1_to_2)
 
-            if not diff2_to_1.empty:
-                csv2 = diff2_to_1.to_csv(index=False)
-                st.download_button(
-                    label="Download rows unique to second CSV",
-                    data=csv2,
-                    file_name="diff2_to_1.csv",
-                    mime="text/csv",
-                )
+                st.write("### Rows in second CSV but not in first CSV")
+                st.write(diff2_to_1)
+
+                # Option to download the comparison results
+                if not diff1_to_2.empty:
+                    csv1 = diff1_to_2.to_csv(index=False)
+                    st.download_button(
+                        label="Download rows unique to first CSV",
+                        data=csv1,
+                        file_name="diff1_to_2.csv",
+                        mime="text/csv",
+                    )
+
+                if not diff2_to_1.empty:
+                    csv2 = diff2_to_1.to_csv(index=False)
+                    st.download_button(
+                        label="Download rows unique to second CSV",
+                        data=csv2,
+                        file_name="diff2_to_1.csv",
+                        mime="text/csv",
+                    )
 
 if __name__ == "__main__":
     main()
