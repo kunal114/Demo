@@ -1,6 +1,34 @@
-import streamlit as st
+import requests
 import pandas as pd
-import webbrowser
+import os
+import time
+from pathlib import Path
+
+def download_csv(url, filename):
+    response = requests.get(url)
+    if response.status_code == 200:
+        downloads_path = str(Path.home() / "Downloads")
+        filepath = os.path.join(downloads_path, filename)
+        with open(filepath, 'wb') as f:
+            f.write(response.content)
+        print(f"File downloaded: {filepath}")
+        return filepath
+    else:
+        print(f"Failed to download file. Status code: {response.status_code}")
+        return None
+
+def copy_and_delete_file(source_path, dest_path):
+    if os.path.exists(source_path):
+        # Copy the file
+        with open(source_path, 'rb') as src, open(dest_path, 'wb') as dst:
+            dst.write(src.read())
+        print(f"File copied to: {dest_path}")
+        
+        # Delete the original file
+        os.remove(source_path)
+        print(f"Original file deleted: {source_path}")
+    else:
+        print(f"Error: File {source_path} not found.")
 
 def compare_dataframes(df1, df2):
     # Find rows in df1 but not in df2
@@ -12,63 +40,45 @@ def compare_dataframes(df1, df2):
     return diff1_to_2, diff2_to_1
 
 def main():
-    st.title("CSV Download and Comparison App")
-
     # URL for the CSV file
     url = 'https://data-insights.galacloud.joechase.net/extractor/query?gu36-00043be6-0773-4327-6351-45653chay'
+    filename = "80043be6-8f72-4327-8351-45653cb07eed.csv"
 
-    st.write(f"Step 1: Download the CSV file from the following URL:")
-    st.write(url)
-
-    if st.button("Open URL to download CSV"):
-        webbrowser.open(url)
-        st.success("URL opened in a new tab. Please download the CSV file.")
-
-    st.write("Step 2: Upload the downloaded CSV file")
-    uploaded_file = st.file_uploader("Choose the CSV file you just downloaded", type="csv")
-
-    if uploaded_file is not None:
-        df1 = pd.read_csv(uploaded_file)
-
-        st.write("### CSV Preview")
-        st.write(df1.head())
-
-        st.write("Step 3: Upload a second CSV file to compare")
-        file2 = st.file_uploader("Choose the second CSV file", type="csv")
-
-        if file2 is not None:
-            df2 = pd.read_csv(file2)
-
-            st.write("### Second CSV Preview")
-            st.write(df2.head())
-
-            if st.button("Compare CSVs"):
-                diff1_to_2, diff2_to_1 = compare_dataframes(df1, df2)
-
-                st.write("### Rows in first CSV but not in second CSV")
-                st.write(diff1_to_2)
-
-                st.write("### Rows in second CSV but not in first CSV")
-                st.write(diff2_to_1)
-
-                # Option to download the comparison results
-                if not diff1_to_2.empty:
-                    csv1 = diff1_to_2.to_csv(index=False)
-                    st.download_button(
-                        label="Download rows unique to first CSV",
-                        data=csv1,
-                        file_name="diff1_to_2.csv",
-                        mime="text/csv",
-                    )
-
-                if not diff2_to_1.empty:
-                    csv2 = diff2_to_1.to_csv(index=False)
-                    st.download_button(
-                        label="Download rows unique to second CSV",
-                        data=csv2,
-                        file_name="diff2_to_1.csv",
-                        mime="text/csv",
-                    )
+    # Download the file
+    downloaded_file = download_csv(url, filename)
+    
+    if downloaded_file:
+        # Wait for the file to be fully written
+        time.sleep(2)
+        
+        # Copy the file to the current directory and delete the original
+        current_dir = os.getcwd()
+        dest_path = os.path.join(current_dir, filename)
+        copy_and_delete_file(downloaded_file, dest_path)
+        
+        # Read the CSV file
+        df1 = pd.read_csv(dest_path)
+        print("First CSV file preview:")
+        print(df1.head())
+        
+        # For demonstration, we'll create a slightly modified version of df1 as df2
+        # In a real scenario, you'd load your second CSV file here
+        df2 = df1.copy()
+        df2 = df2.iloc[1:] # Remove the first row to create a difference
+        
+        # Compare the dataframes
+        diff1_to_2, diff2_to_1 = compare_dataframes(df1, df2)
+        
+        print("\nRows in first CSV but not in second CSV:")
+        print(diff1_to_2)
+        
+        print("\nRows in second CSV but not in first CSV:")
+        print(diff2_to_1)
+        
+        # Save the comparison results
+        diff1_to_2.to_csv("diff1_to_2.csv", index=False)
+        diff2_to_1.to_csv("diff2_to_1.csv", index=False)
+        print("\nComparison results saved as diff1_to_2.csv and diff2_to_1.csv")
 
 if __name__ == "__main__":
     main()
