@@ -17,19 +17,6 @@ def download_csv(url, filename):
         print(f"Failed to download file. Status code: {response.status_code}")
         return None
 
-def copy_and_delete_file(source_path, dest_path):
-    if os.path.exists(source_path):
-        # Copy the file
-        with open(source_path, 'rb') as src, open(dest_path, 'wb') as dst:
-            dst.write(src.read())
-        print(f"File copied to: {dest_path}")
-        
-        # Delete the original file
-        os.remove(source_path)
-        print(f"Original file deleted: {source_path}")
-    else:
-        print(f"Error: File {source_path} not found.")
-
 def compare_dataframes(df1, df2):
     # Find rows in df1 but not in df2
     diff1_to_2 = pd.merge(df1, df2, how='outer', indicator=True).query('_merge == "left_only"').drop('_merge', axis=1)
@@ -51,13 +38,8 @@ def main():
         # Wait for the file to be fully written
         time.sleep(2)
         
-        # Copy the file to the current directory and delete the original
-        current_dir = os.getcwd()
-        dest_path = os.path.join(current_dir, filename)
-        copy_and_delete_file(downloaded_file, dest_path)
-        
         # Read the CSV file
-        df1 = pd.read_csv(dest_path)
+        df1 = pd.read_csv(downloaded_file)
         print("First CSV file preview:")
         print(df1.head())
         
@@ -76,9 +58,14 @@ def main():
         print(diff2_to_1)
         
         # Save the comparison results
-        diff1_to_2.to_csv("diff1_to_2.csv", index=False)
-        diff2_to_1.to_csv("diff2_to_1.csv", index=False)
-        print("\nComparison results saved as diff1_to_2.csv and diff2_to_1.csv")
+        downloads_path = str(Path.home() / "Downloads")
+        diff1_to_2.to_csv(os.path.join(downloads_path, "diff1_to_2.csv"), index=False)
+        diff2_to_1.to_csv(os.path.join(downloads_path, "diff2_to_1.csv"), index=False)
+        print("\nComparison results saved as diff1_to_2.csv and diff2_to_1.csv in the Downloads folder")
+        
+        # Delete the original downloaded file
+        os.remove(downloaded_file)
+        print(f"Original downloaded file deleted: {downloaded_file}")
 
 if __name__ == "__main__":
     main()
