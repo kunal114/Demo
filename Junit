@@ -1,35 +1,48 @@
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.config.Customizer;
+import streamlit as st
+import pandas as pd
+import io
 
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+def csv_recon(file1, file2):
+    # Read CSV files
+    df1 = pd.read_csv(file1)
+    df2 = pd.read_csv(file2)
 
-@ExtendWith(MockitoExtension.class)
-class SecurityConfigurationTest {
+    st.write(f"File 1: {file1.name}")
+    st.write(f"File 2: {file2.name}")
 
-    @Mock
-    private HttpSecurity http;
+    # Basic info for both files
+    for i, df in enumerate([df1, df2], 1):
+        st.subheader(f"File {i} Info:")
+        st.write(f"Rows: {df.shape[0]}")
+        st.write(f"Columns: {df.shape[1]}")
+        st.write("Column names:", df.columns.tolist())
+        st.write("Data types:")
+        st.write(df.dtypes)
+        st.write("First few rows:")
+        st.dataframe(df.head())
+        st.markdown("---")
 
-    @Mock
-    private SecurityFilterChain securityFilterChain;
+    # Compare columns
+    common_cols = set(df1.columns) & set(df2.columns)
+    unique_cols_1 = set(df1.columns) - set(df2.columns)
+    unique_cols_2 = set(df2.columns) - set(df1.columns)
 
-    @Test
-    public void test_filterChain() throws Exception {
-        SecurityConfiguration config = new SecurityConfiguration();
+    st.subheader("Column Comparison:")
+    st.write(f"Common columns: {common_cols}")
+    st.write(f"Unique columns in File 1: {unique_cols_1}")
+    st.write(f"Unique columns in File 2: {unique_cols_2}")
 
-        // Mock the necessary methods
-        when(http.authorizeHttpRequests(any(Customizer.class))).thenReturn(http);
-        when(http.csrf(any(Customizer.class))).thenReturn(http);
-        when(http.build()).thenReturn(securityFilterChain);
+def main():
+    st.title("CSV File Reconnaissance")
 
-        SecurityFilterChain result = config.filterChain(http);
+    st.write("Upload two CSV files to compare them:")
 
-        assertNotNull(result);
-    }
-}
+    file1 = st.file_uploader("Choose the first CSV file", type="csv")
+    file2 = st.file_uploader("Choose the second CSV file", type="csv")
+
+    if file1 and file2:
+        if st.button("Analyze Files"):
+            csv_recon(file1, file2)
+
+if __name__ == "__main__":
+    main()
