@@ -1,61 +1,79 @@
-import streamlit as st
 import pandas as pd
-import os
+import numpy as np
+from sklearn.impute import SimpleImputer
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.multioutput import MultiOutputClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.feature_selection import RFE
 
-def compare_dataframes(df1, df2):
-    # Find rows in df1 but not in df2
-    diff1_to_2 = pd.merge(df1, df2, how='outer', indicator=True).query('_merge == "left_only"').drop('_merge', axis=1)
+class DynamicFeatureSelector:
+    def __init__(self, n_outputs):
+        self.n_outputs = n_outputs
+        self.models = [RandomForestClassifier(n_estimators=100, random_state=42) for _ in range(n_outputs)]
+        self.feature_selectors = [RFE(estimator=RandomForestClassifier(n_estimators=10, random_state=42), n_features_to_select=1, step=1) for _ in range(n_outputs)]
+        self.selected_features = [None] * n_outputs
+
+    def fit(self, X, y):
+        for i in range(self.n_outputs):
+            # Perform feature selection
+            self.feature_selectors[i].fit(X, y[:, i])
+            self.selected_features[i] = X.columns[self.feature_selectors[i].support_].tolist()
+            
+            # Train the model on selected features
+            self.models[i].fit(X[self.selected_features[i]], y[:, i])
+
+    def predict(self, X):
+        predictions = []
+        for i in range(self.n_outputs):
+            pred = self.models[i].predict(X[self.selected_features[i]])
+            predictions.append(pred)
+        return np.column_stack(predictions)
+
+def preprocess_data(data):
+    # Replace null values with NaN
+    data = data.replace('', np.nan)
     
-    # Find rows in df2 but not in df1
-    diff2_to_1 = pd.merge(df1, df2, how='outer', indicator=True).query('_merge == "right_only"').drop('_merge', axis=1)
+    # Identify numeric and categorical columns
+    numeric_columns = data.select_dtypes(include=[np.number]).columns
+    categorical_columns = data.select_dtypes(exclude=[np.number]).columns
     
-    return diff1_to_2, diff2_to_1
+    # Impute missing values
+    numeric_imputer = SimpleImputer(strategy='mean')
+    categorical_imputer = SimpleImputer(strategy='most_frequent')
+    
+    data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
+    data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
+    
+    # Encode categorical variables
+    data = pd.get_dummies(data, columns=categorical_columns)
+    
+    return data
 
-def main():
-    st.title("CSV Comparison App")
-
-    st.write("Upload two CSV files to compare them.")
-
-    file1 = st.file_uploader("Choose the first CSV file", type="csv")
-    file2 = st.file_uploader("Choose the second CSV file", type="csv")
-
-    if file1 and file2:
-        df1 = pd.read_csv(file1)
-        df2 = pd.read_csv(file2)
-
-        st.write("### First CSV Preview")
-        st.write(df1.head())
-
-        st.write("### Second CSV Preview")
-        st.write(df2.head())
-
-        if st.button("Compare CSVs"):
-            diff1_to_2, diff2_to_1 = compare_dataframes(df1, df2)
-
-            st.write("### Rows in first CSV but not in second CSV")
-            st.write(diff1_to_2)
-
-            st.write("### Rows in second CSV but not in first CSV")
-            st.write(diff2_to_1)
-
-            # Option to download the comparison results
-            if not diff1_to_2.empty:
-                csv1 = diff1_to_2.to_csv(index=False)
-                st.download_button(
-                    label="Download rows unique to first CSV",
-                    data=csv1,
-                    file_name="diff1_to_2.csv",
-                    mime="text/csv",
-                )
-
-            if not diff2_to_1.empty:
-                csv2 = diff2_to_1.to_csv(index=False)
-                st.download_button(
-                    label="Download rows unique to second CSV",
-                    data=csv2,
-                    file_name="diff2_to_1.csv",
-                    mime="text/csv",
-                )
-
+# Main execution
 if __name__ == "__main__":
-    main()
+    # Load your data
+    data = pd.read_csv("your_data.csv")
+    
+    # Preprocess the data
+    processed_data = preprocess_data(data)
+    
+    # Separate features and targets
+    X = processed_data.drop(['output1', 'output2', ..., 'outputN'], axis=1)
+    y = processed_data[['output1', 'output2', ..., 'outputN']]
+    
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Initialize and train the model
+    model = DynamicFeatureSelector(n_outputs=y.shape[1])
+    model.fit(X_train, y_train)
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    
+    # Evaluate the model
+    for i in range(y.shape[1]):
+        accuracy = accuracy_score(y_test.iloc[:, i], y_pred[:, i])
+        print(f"Accuracy for output {i+1}: {accuracy}")
+        print(f"Selected features for output {i+1}: {model.selected_features[i]}")
