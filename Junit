@@ -82,3 +82,17 @@ if __name__ == "__main__":
         accuracy = accuracy_score(y_test.iloc[:, i], y_pred[:, i])
         print(f"Accuracy for output {i+1}: {accuracy}")
         print(f"Selected features for output {i+1}: {model.selected_features[i]}")
+
+
+
+id,feature1,feature2,feature3,feature4,feature5,categorical1,categorical2,output
+1,10.5,20,30,,50,red,small,A
+2,15.2,25,35,45,,blue,medium,B
+3,,22,32,42,52,green,large,C
+4,12.8,,,40,55,red,medium,A
+5,18.3,28,38,48,58,blue,small,B
+6,14.7,24,34,,54,green,large,D
+7,11.9,21,31,41,,red,medium,C
+8,,26,36,46,56,blue,small,A
+9,13.6,23,,43,53,green,large,B
+10,16.4,27,37,47,57,red,medium,D
