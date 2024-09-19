@@ -1,51 +1,56 @@
 import pandas as pd
 import numpy as np
-from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.multioutput import MultiOutputClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
 from sklearn.feature_selection import RFE
+from sklearn.base import BaseEstimator, TransformerMixin
+
+class NullColumnDropper(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        return X.dropna(axis=1)
 
 class DynamicFeatureSelector:
     def __init__(self, n_outputs):
         self.n_outputs = n_outputs
         self.models = [RandomForestClassifier(n_estimators=100, random_state=42) for _ in range(n_outputs)]
         self.feature_selectors = [RFE(estimator=RandomForestClassifier(n_estimators=10, random_state=42), n_features_to_select=1, step=1) for _ in range(n_outputs)]
+        self.null_droppers = [NullColumnDropper() for _ in range(n_outputs)]
         self.selected_features = [None] * n_outputs
 
     def fit(self, X, y):
         for i in range(self.n_outputs):
+            # Drop columns with null values for this specific record
+            X_valid = self.null_droppers[i].fit_transform(X)
+            
             # Perform feature selection
-            self.feature_selectors[i].fit(X, y[:, i])
-            self.selected_features[i] = X.columns[self.feature_selectors[i].support_].tolist()
+            self.feature_selectors[i].fit(X_valid, y.iloc[:, i])
+            self.selected_features[i] = X_valid.columns[self.feature_selectors[i].support_].tolist()
             
             # Train the model on selected features
-            self.models[i].fit(X[self.selected_features[i]], y[:, i])
+            self.models[i].fit(X_valid[self.selected_features[i]], y.iloc[:, i])
 
     def predict(self, X):
         predictions = []
         for i in range(self.n_outputs):
-            pred = self.models[i].predict(X[self.selected_features[i]])
+            # Drop columns with null values for this specific record
+            X_valid = self.null_droppers[i].transform(X)
+            
+            # Predict using only the selected features
+            pred = self.models[i].predict(X_valid[self.selected_features[i]])
             predictions.append(pred)
+        
         return np.column_stack(predictions)
 
 def preprocess_data(data):
-    # Replace null values with NaN
+    # Replace empty strings with NaN
     data = data.replace('', np.nan)
     
-    # Identify numeric and categorical columns
-    numeric_columns = data.select_dtypes(include=[np.number]).columns
-    categorical_columns = data.select_dtypes(exclude=[np.number]).columns
-    
-    # Impute missing values
-    numeric_imputer = SimpleImputer(strategy='mean')
-    categorical_imputer = SimpleImputer(strategy='most_frequent')
-    
-    data[numeric_columns] = numeric_imputer.fit_transform(data[numeric_columns])
-    data[categorical_columns] = categorical_imputer.fit_transform(data[categorical_columns])
-    
     # Encode categorical variables
+    categorical_columns = data.select_dtypes(include=['object']).columns
     data = pd.get_dummies(data, columns=categorical_columns)
     
     return data
