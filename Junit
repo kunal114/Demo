@@ -247,7 +247,57 @@ if __name__ == "__main__":
     
     # Make predictions
     y_pred = model.predict(X_test)
+
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.datasets import make_classification
+
+def generate_large_dataset(n_samples=10000, n_features=10, n_categorical=3, n_classes=4):
+    # Generate a synthetic dataset
+    X, y = make_classification(n_samples=n_samples, 
+                               n_features=n_features-n_categorical, 
+                               n_classes=n_classes, 
+                               n_informative=5, 
+                               n_redundant=2, 
+                               n_repeated=0, 
+                               n_clusters_per_class=2,
+                               random_state=42)
     
+    # Create a DataFrame
+    df = pd.DataFrame(X, columns=[f'feature_{i}' for i in range(n_features-n_categorical)])
+    
+    # Add categorical features
+    for i in range(n_categorical):
+        df[f'categorical_{i}'] = np.random.choice(['A', 'B', 'C', 'D', 'E'], size=n_samples)
+    
+    # Add some null values
+    for col in df.columns:
+        mask = np.random.random(n_samples) < 0.05  # 5% of values will be null
+        df.loc[mask, col] = np.nan
+    
+    # Add the output column
+    df['output'] = [chr(65 + i) for i in y]  # Convert to letters A, B, C, D
+    
+    # Add an ID column
+    df.insert(0, 'id', range(1, n_samples + 1))
+    
+    return df
+
+# Generate the dataset
+large_df = generate_large_dataset()
+
+# Save to CSV
+large_df.to_csv('large_training_dataset.csv', index=False)
+
+print("Large dataset has been generated and saved to 'large_training_dataset.csv'")
+print(f"Dataset shape: {large_df.shape}")
+print("\nSample of the dataset:")
+print(large_df.head())
+print("\nDataset info:")
+print(large_df.info())
     # Evaluate the model
     accuracy = accuracy_score(y_test, y_pred)
     print(f"Accuracy: {accuracy}")
