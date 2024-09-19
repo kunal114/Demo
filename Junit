@@ -96,3 +96,57 @@ id,feature1,feature2,feature3,feature4,feature5,categorical1,categorical2,output
 8,,26,36,46,56,blue,small,A
 9,13.6,23,,43,53,green,large,B
 10,16.4,27,37,47,57,red,medium,D
+
+
+
+class DynamicFeatureSelector:
+    def __init__(self):
+        self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+        self.feature_selector = RFE(estimator=RandomForestClassifier(n_estimators=10, random_state=42), n_features_to_select=1, step=1)
+        self.null_dropper = NullColumnDropper()
+        self.selected_features = None
+
+    def fit(self, X, y):
+        # Drop columns with null values for this specific record
+        X_valid = self.null_dropper.fit_transform(X)
+        
+        # Perform feature selection
+        self.feature_selector.fit(X_valid, y)
+        self.selected_features = X_valid.columns[self.feature_selector.support_].tolist()
+        
+        # Train the model on selected features
+        self.model.fit(X_valid[self.selected_features], y)
+
+    def predict(self, X):
+        # Drop columns with null values for this specific record
+        X_valid = self.null_dropper.transform(X)
+        
+        # Predict using only the selected features
+        return self.model.predict(X_valid[self.selected_features])
+
+# Main execution
+if __name__ == "__main__":
+    # Load your data
+    data = pd.read_csv("sample_data.csv")
+    
+    # Preprocess the data
+    processed_data = preprocess_data(data)
+    
+    # Separate features and targets
+    X = processed_data.drop(['id', 'output'], axis=1)
+    y = processed_data['output']
+    
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Initialize and train the model
+    model = DynamicFeatureSelector()
+    model.fit(X_train, y_train)
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    
+    # Evaluate the model
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Accuracy: {accuracy}")
+    print(f"Selected features: {model.selected_features}")
