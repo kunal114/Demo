@@ -150,3 +150,105 @@ if __name__ == "__main__":
     accuracy = accuracy_score(y_test, y_pred)
     print(f"Accuracy: {accuracy}")
     print(f"Selected features: {model.selected_features}")
+
+
+
+import pandas as pd
+import numpy as np
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+from sklearn.feature_selection import RFE
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import LabelEncoder
+
+class NullColumnDropper(BaseEstimator, TransformerMixin):
+    def fit(self, X, y=None):
+        return self
+
+    def transform(self, X):
+        return X.dropna(axis=1)
+
+class DynamicFeatureSelector:
+    def __init__(self):
+        self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+        self.feature_selector = RFE(estimator=RandomForestClassifier(n_estimators=10, random_state=42), n_features_to_select=1, step=1)
+        self.null_dropper = NullColumnDropper()
+        self.selected_features = None
+        self.label_encoder = LabelEncoder()
+
+    def fit(self, X, y):
+        # Encode the target variable
+        y_encoded = self.label_encoder.fit_transform(y)
+        
+        # Drop columns with null values for this specific record
+        X_valid = self.null_dropper.fit_transform(X)
+        
+        # Perform feature selection
+        self.feature_selector.fit(X_valid, y_encoded)
+        self.selected_features = X_valid.columns[self.feature_selector.support_].tolist()
+        
+        # Train the model on selected features
+        self.model.fit(X_valid[self.selected_features], y_encoded)
+
+    def predict(self, X):
+        # Drop columns with null values for this specific record
+        X_valid = self.null_dropper.transform(X)
+        
+        # Predict using only the selected features
+        predictions_encoded = self.model.predict(X_valid[self.selected_features])
+        
+        # Decode the predictions back to original labels
+        return self.label_encoder.inverse_transform(predictions_encoded)
+
+def preprocess_data(data):
+    # Create a copy of the data to avoid modifying the original
+    df = data.copy()
+    
+    # Replace empty strings with NaN
+    df = df.replace('', np.nan)
+    
+    # Identify numeric and categorical columns
+    numeric_columns = df.select_dtypes(include=[np.number]).columns
+    categorical_columns = df.select_dtypes(exclude=[np.number]).columns.drop('output')
+    
+    # Handle categorical variables
+    for col in categorical_columns:
+        # Create dummy variables for each categorical column
+        dummies = pd.get_dummies(df[col], prefix=col, dummy_na=True)
+        # Add the dummy variables to the dataframe
+        df = pd.concat([df, dummies], axis=1)
+        # Drop the original categorical column
+        df = df.drop(col, axis=1)
+    
+    # Convert the 'output' column to categorical type
+    df['output'] = df['output'].astype('category')
+    
+    return df
+
+# Main execution
+if __name__ == "__main__":
+    # Load your data
+    data = pd.read_csv("sample_data.csv")
+    
+    # Preprocess the data
+    processed_data = preprocess_data(data)
+    
+    # Separate features and targets
+    X = processed_data.drop(['id', 'output'], axis=1)
+    y = processed_data['output']
+    
+    # Split the data
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    # Initialize and train the model
+    model = DynamicFeatureSelector()
+    model.fit(X_train, y_train)
+    
+    # Make predictions
+    y_pred = model.predict(X_test)
+    
+    # Evaluate the model
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"Accuracy: {accuracy}")
+    print(f"Selected features: {model.selected_features}")
