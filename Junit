@@ -1,19 +1,8 @@
-FROM jetae-publish.prod.aws.jpmchase.net/container-base/managedbaseimages/oracle-jdk:17-stable
-
-LABEL org.opencontainers.image.source="https://$(REPO_HOSTNAME)/projects/${PROJECT}/repos/${REPO)/browse?at=$(COMMIT_HASH)"
-LABEL org.opencontainers.image.revision=${COMMIT_HASH)
-LABEL org.opencontainers.image.title="pb-fixedincome-webserver"
-
-# Copy exploded JAR contents
-COPY target/dependency/ /app/
-
-RUN microdnf install -y fontconfig
-
-RUN chown -R jpmcnobody:jpmcnobody /app/ && \
-    mkdir /app/logs && \
-    chown jpmcnobody:jpmcnobody /app/logs
-
-USER 99
-
-# Adjust the CMD to use the exploded JAR
-CMD java $JAVA_OPTS -cp /app:/app/lib/* com.yourcompany.YourMainClass -Dlogging.file.name=/app/logs/WebServer.log
+index="cloudwatchlogs" 
+loggroup="/aws/eks//containers" 
+meta_account_no="xyz" 
+logstream="pb-fixedincome" 
+webserver* 
+message.message.log="Janus header doesn't match with access token" 
+| table _time, message.message.log, message.message.time_nanoseconds, host, source
+| sort by message.message.time_nanoseconds desc
