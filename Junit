@@ -1,8 +1,6 @@
-index="cloudwatchlogs" 
-loggroup="/aws/eks//containers" 
-meta_account_no="xyz" 
-logstream="pb-fixedincome" 
-webserver* 
-message.message.log="Janus header doesn't match with access token" 
-| table _time, message.message.log, message.message.time_nanoseconds, host, source
-| sort by message.message.time_nanoseconds desc
+Testing Automation: Developed and maintained automated test scripts to improve test coverage and efficiency.
+JMeter Setup for Postgres Testing: Configured and executed performance tests on the Postgres database to identify and resolve performance issues.
+Splunk Logs Setup: Established and optimized Splunk logging for real-time monitoring, facilitating rapid issue identification and debugging.
+Performance Optimization: Identified key bottlenecks and improved system performance through testing and monitoring insights.
+System Reliability: Enhanced overall system stability by implementing robust testing and monitoring practices.
+Cross-Functional Collaboration: Worked closely with development and DevOps teams to ensure alignment on performance and monitoring requirements.
