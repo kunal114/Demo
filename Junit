@@ -1,7 +1,2 @@
-TM Spring Boot Upgrade: Executed an upgrade of the TM application to the latest Spring Boot version, improving application performance and security.
-Alerts Portlet Pen Testing: Conducted thorough penetration testing for the Alerts Portlet, identifying and mitigating potential security vulnerabilities.
-NADC Migration: Played a key role in the migration process, ensuring a seamless transition and maintaining system integrity.
-EPG Flag Implementation: Managed the implementation of EPG flags, aligning with regulatory requirements and enhancing data tagging.
-C2C Authentication for FI Portal: Established C2C authentication for the FI Portal, bolstering security and authentication processes.
-EKS Upgrade for FI Portal: Oversaw the EKS (Elastic Kubernetes Service) upgrade for the FI Portal, ensuring improved scalability and resource efficiency.
-Geneos Setup for FI Portal: Configured Geneos for the FI Portal, enabling enhanced monitoring and system health tracking.
+STE Screen Bug Fix: Resolved specific client-reported bugs in the STE screen to enhance reliability.
+Approvals Tab Addition in TM: Added an Approvals tab in the TM application to support client-specific workflows and improve functionality.
