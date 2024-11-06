@@ -1,4 +1,43 @@
-PUMA Feed Onboarding: Onboarded the PUMA feed to the Data Anomaly Detection Framework, enhancing data accuracy.
-DEVUP Abstract Submission: Uploaded an abstract to DEVUP, demonstrating active engagement with development initiatives.
-Hosted Badminton Tournament: Organized a team-building badminton tournament, strengthening camaraderie.
-AI Hackathon Participation: Took part in an AI hackathon to sharpen technical skills and foster innovation.
+import xml.etree.ElementTree as ET
+import pandas as pd
+import argparse
+
+def xml_to_excel(xml_file, excel_file):
+    """
+    Convert XML file to Excel format.
+    
+    Args:
+        xml_file (str): Path to input XML file
+        excel_file (str): Path to output Excel file
+    """
+    # Parse XML file
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+    
+    # Create list to store all records
+    all_records = []
+    
+    # Extract data from XML
+    for child in root:
+        record = {}
+        for element in child:
+            record[element.tag] = element.text
+        all_records.append(record)
+    
+    # Convert to DataFrame
+    df = pd.DataFrame(all_records)
+    
+    # Save to Excel
+    df.to_excel(excel_file, index=False)
+    print(f"Successfully converted {xml_file} to {excel_file}")
+
+if __name__ == "__main__":
+    # Set up command line arguments
+    parser = argparse.ArgumentParser(description='Convert XML file to Excel')
+    parser.add_argument('xml_file', help='Input XML file path')
+    parser.add_argument('excel_file', help='Output Excel file path')
+    
+    args = parser.parse_args()
+    
+    # Convert file
+    xml_to_excel(args.xml_file, args.excel_file)
