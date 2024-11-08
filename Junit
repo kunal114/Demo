@@ -1,3 +1,33 @@
-I wanted to take a moment to express my sincere appreciation for your help with the Terraform issues we faced recently. Your expertise and willingness to step in made a significant difference, and I’m incredibly grateful for your patience and guidance throughout the troubleshooting process.
+| makeresults count=1
+| streamstats count
+| eval url="https://your-api-endpoint/health"
+| eval method="GET"
+| eval headers="{'Authorization': 'Bearer your-token'}"
+| eval timeout=30
+| eval response_timeout=30
+| http url=url method=method headers=headers timeout=timeout response_timeout=response_timeout
+| eval is_success=if(status_code >= 200 AND status_code < 300, 1, 0)
+| eval response_time=round(request_time * 1000, 2)
+| eval status=case(
+    is_success=1, "healthy",
+    status_code=403, "unauthorized",
+    status_code=404, "not found",
+    status_code>=500, "server error",
+    1=1, "unknown error"
+)
+| fields _time url status_code status response_time response_body
+| rename response_time as response_time_ms
 
-Your insights not only helped us resolve the issue faster but also gave me a deeper understanding of Terraform, which will be invaluable for future projects. Thank you for going above and beyond to assist and for being such a reliable team player!
+# Save as scheduled search with alert:
+| eval alert=case(
+    status_code>=500, "critical",
+    status_code>=400, "warning",
+    response_time>1000, "warning",
+    1=1, "normal"
+)
+| stats latest(status_code) as status_code, 
+    latest(response_time_ms) as response_time_ms,
+    latest(status) as status,
+    latest(alert) as alert
+    by url
+| where alert != "normal"
