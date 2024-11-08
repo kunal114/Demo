@@ -1,33 +1,17 @@
+# Search (Save as Alert)
 | makeresults count=1
 | streamstats count
 | eval url="https://your-api-endpoint/health"
 | eval method="GET"
-| eval headers="{'Authorization': 'Bearer your-token'}"
-| eval timeout=30
-| eval response_timeout=30
-| http url=url method=method headers=headers timeout=timeout response_timeout=response_timeout
-| eval is_success=if(status_code >= 200 AND status_code < 300, 1, 0)
+| http url=url method=method response_timeout=30
+| eval is_healthy=if(status_code >= 200 AND status_code < 300, 1, 0)
 | eval response_time=round(request_time * 1000, 2)
-| eval status=case(
-    is_success=1, "healthy",
-    status_code=403, "unauthorized",
-    status_code=404, "not found",
-    status_code>=500, "server error",
-    1=1, "unknown error"
+| eval alert_severity=case(
+    status_code>=500, "Critical",
+    status_code>=400, "Warning",
+    response_time>1000, "Warning",
+    1=1, "Normal"
 )
-| fields _time url status_code status response_time response_body
+| fields _time url status_code response_time alert_severity
 | rename response_time as response_time_ms
-
-# Save as scheduled search with alert:
-| eval alert=case(
-    status_code>=500, "critical",
-    status_code>=400, "warning",
-    response_time>1000, "warning",
-    1=1, "normal"
-)
-| stats latest(status_code) as status_code, 
-    latest(response_time_ms) as response_time_ms,
-    latest(status) as status,
-    latest(alert) as alert
-    by url
-| where alert != "normal"
+| where alert_severity!="Normal"
