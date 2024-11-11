@@ -1,17 +1,10 @@
-# Search (Save as Alert)
-| makeresults count=1
-| streamstats count
-| eval url="https://your-api-endpoint/health"
-| eval method="GET"
-| http url=url method=method response_timeout=30
-| eval is_healthy=if(status_code >= 200 AND status_code < 300, 1, 0)
-| eval response_time=round(request_time * 1000, 2)
-| eval alert_severity=case(
-    status_code>=500, "Critical",
-    status_code>=400, "Warning",
-    response_time>1000, "Warning",
-    1=1, "Normal"
-)
-| fields _time url status_code response_time alert_severity
-| rename response_time as response_time_ms
-| where alert_severity!="Normal"
+index=* sourcetype=*access* api_endpoint="*"
+| eval response_time=round(response_time,2)
+| stats 
+    count as total_requests
+    avg(response_time) as avg_response_time
+    count(eval(status>=500)) as server_errors
+    count(eval(status>=400 AND status<500)) as client_errors
+    count(eval(status>=200 AND status<300)) as success
+    by status api_endpoint
+| sort -total_requests
