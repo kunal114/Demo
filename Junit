@@ -1,10 +1,8 @@
-index=* sourcetype=*access* api_endpoint="*"
-| eval response_time=round(response_time,2)
+index=* sourcetype=*access* url="*/health*"
 | stats 
-    count as total_requests
-    avg(response_time) as avg_response_time
-    count(eval(status>=500)) as server_errors
-    count(eval(status>=400 AND status<500)) as client_errors
-    count(eval(status>=200 AND status<300)) as success
-    by status api_endpoint
-| sort -total_requests
+    count as total_checks
+    count(eval(status=200)) as healthy
+    count(eval(status!=200)) as unhealthy
+    by status url
+| eval health_percentage=round((healthy/total_checks)*100,2)
+| sort -total_checks
