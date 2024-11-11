@@ -1,4 +1,5 @@
 | makeresults count=1
-| eval rest_url="https://your.aws.health.url.com/health"
-| rest endpoint="$rest_url$" method=GET
+| eval url="https://your.aws.health.url.com/health"
+| search url=*
+| map search="rest endpoint=$url$ method=GET"
 | table status response_code response
