@@ -1,7 +1,10 @@
-| makeresults 
-| eval url="YOUR_AWS_HEALTH_URL"
-| streamstats count 
-| eval time=now() 
-| table url time 
-| map search="curl url=$url$ method=get"
-| table url status_code response_time
+| rest method=GET url="your_aws_health_url"
+| eval check_time=_time
+| stats latest(response_code) as status latest(check_time) as last_check
+| eval status_message=case(
+    status=200, "Healthy",
+    status=500, "Server Error",
+    status=503, "Service Unavailable",
+    status=404, "Not Found",
+    true(), "Unknown Status"
+)
