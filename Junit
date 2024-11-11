@@ -1,6 +1,8 @@
-| rest method=GET url="your_aws_health_url"
+| makeresults count=1
+| eval url="your_aws_health_url"
+| rest method=GET url=$url$
 | eval check_time=_time
-| stats latest(response_code) as status latest(check_time) as last_check
+| stats latest(status) as status latest(check_time) as last_check
 | eval status_message=case(
     status=200, "Healthy",
     status=500, "Server Error",
