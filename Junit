@@ -1,8 +1,7 @@
-index=* sourcetype=*access* url="*/health*"
-| stats 
-    count as total_checks
-    count(eval(status=200)) as healthy
-    count(eval(status!=200)) as unhealthy
-    by status url
-| eval health_percentage=round((healthy/total_checks)*100,2)
-| sort -total_checks
+| makeresults 
+| eval url="YOUR_AWS_HEALTH_URL"
+| streamstats count 
+| eval time=now() 
+| table url time 
+| map search="curl url=$url$ method=get"
+| table url status_code response_time
