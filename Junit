@@ -1,5 +1,85 @@
-| makeresults count=1
-| eval url="https://your.aws.health.url.com/health"
-| search url=*
-| map search="rest endpoint=$url$ method=GET"
-| table status response_code response
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
+
+import java.io.IOException;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class PositionDetailRepositoryTest {
+
+    @Mock
+    private AppEnvProperties appEnvProperties;
+
+    @Mock
+    private RestTemplate restTemplate;
+
+    @InjectMocks
+    private PositionDetailRepository positionDetailRepository;
+
+    @BeforeEach
+    void setUp() {
+        // Any setup required before each test
+    }
+
+    @Test
+    void testGetPositionDetailData_SuccessfulResponse() throws IOException {
+        // Arrange
+        RestRequestInput mockRequest = mock(RestRequestInput.class);
+        String mockUrl = "http://test-url.com";
+        String expectedResponseBody = "{\"key\": \"value\"}";
+
+        when(appEnvProperties.getPositionDetailUrl()).thenReturn(mockUrl);
+        when(restTemplate.postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class)))
+            .thenReturn(new ResponseEntity<>(expectedResponseBody, HttpStatus.OK));
+
+        // Act
+        String actualResponse = positionDetailRepository.getPositionDetailData(mockRequest);
+
+        // Assert
+        assertEquals(expectedResponseBody, actualResponse);
+        verify(restTemplate).postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class));
+    }
+
+    @Test
+    void testGetPositionDetailData_NullResponse() throws IOException {
+        // Arrange
+        RestRequestInput mockRequest = mock(RestRequestInput.class);
+        String mockUrl = "http://test-url.com";
+
+        when(appEnvProperties.getPositionDetailUrl()).thenReturn(mockUrl);
+        when(restTemplate.postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class)))
+            .thenReturn(null);
+
+        // Act
+        String actualResponse = positionDetailRepository.getPositionDetailData(mockRequest);
+
+        // Assert
+        assertEquals("", actualResponse);
+        verify(restTemplate).postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class));
+    }
+
+    @Test
+    void testGetPositionDetailData_ExceptionHandling() throws IOException {
+        // Arrange
+        RestRequestInput mockRequest = mock(RestRequestInput.class);
+        String mockUrl = "http://test-url.com";
+
+        when(appEnvProperties.getPositionDetailUrl()).thenReturn(mockUrl);
+        when(restTemplate.postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class)))
+            .thenThrow(new RuntimeException("Test Exception"));
+
+        // Act & Assert
+        assertThrows(IOException.class, () -> {
+            positionDetailRepository.getPositionDetailData(mockRequest);
+        });
+    }
+}
