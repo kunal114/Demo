@@ -3,7 +3,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.ResponseEntity;
+import org.slf4j.Logger;
+import org.springframework.http.HttpEntity;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
@@ -12,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class AccountInquiryServiceTest {
+class AccountInquiryServiceExceptionTest {
 
     @Mock
     private RestTemplate restTemplate;
@@ -20,63 +22,102 @@ class AccountInquiryServiceTest {
     @Mock
     private PortfolioInfoServerProperties portfolioInfoServerProperties;
 
+    @Mock
+    private Logger logger;
+
     @InjectMocks
     private YourServiceClassName service;
 
     @Test
-    void testGetAccountInquiryData() throws IOException {
+    void testGetAccountInquiryData_RestClientException() throws IOException {
         // Arrange
-        Object request = new Object(); // Replace with actual request type
+        RestRequestInput request = new RestRequestInput(); // Replace with actual request object
         String mockUrl = "http://example.com/account-inquiry";
-        String expectedResponse = "Sample Response";
 
-        // Configure mocks
+        // Setup mock URL
         when(portfolioInfoServerProperties.getAccountInquiryUrl())
             .thenReturn(mockUrl);
 
-        ResponseEntity<String> mockResponseEntity = 
-            ResponseEntity.ok(expectedResponse);
-
+        // Simulate RestClientException
         when(restTemplate.postForEntity(
             eq(mockUrl), 
-            any(), 
+            any(HttpEntity.class), 
             eq(String.class)
-        )).thenReturn(mockResponseEntity);
+        )).thenThrow(new RestClientException("Connection failed"));
 
         // Act
-        String actualResponse = service.getAccountInquiryData(request);
+        String result = service.getAccountInquiryData(request);
 
         // Assert
-        assertNotNull(actualResponse);
-        assertEquals(expectedResponse, actualResponse);
+        assertEquals("", result);
 
-        // Verify interactions
-        verify(restTemplate).postForEntity(
+        // Verify logging
+        verify(logger).error(
+            contains("AccountInquiryUrl"), 
             eq(mockUrl), 
-            any(), 
-            eq(String.class)
+            any(RestClientException.class)
         );
     }
 
     @Test
-    void testGetAccountInquiryData_NullResponse() throws IOException {
+    void testGetAccountInquiryData_GenericException() throws IOException {
         // Arrange
-        Object request = new Object(); // Replace with actual request type
+        RestRequestInput request = new RestRequestInput(); // Replace with actual request object
         String mockUrl = "http://example.com/account-inquiry";
 
+        // Setup mock URL
         when(portfolioInfoServerProperties.getAccountInquiryUrl())
             .thenReturn(mockUrl);
 
+        // Simulate generic Exception
         when(restTemplate.postForEntity(
             eq(mockUrl), 
-            any(), 
+            any(HttpEntity.class), 
             eq(String.class)
-        )).thenReturn(null);
+        )).thenThrow(new RuntimeException("Unexpected error"));
 
         // Act
-        String actualResponse = service.getAccountInquiryData(request);
+        String result = service.getAccountInquiryData(request);
 
         // Assert
-        assertEquals("", actualResponse);
+        assertEquals("", result);
+
+        // Verify logging
+        verify(logger).error(
+            contains("AccountInquiryUrl"), 
+            eq(mockUrl), 
+            any(RuntimeException.class)
+        );
+    }
+
+    @Test
+    void testGetAccountInquiryData_NetworkTimeout() throws IOException {
+        // Arrange
+        RestRequestInput request = new RestRequestInput(); // Replace with actual request object
+        String mockUrl = "http://example.com/account-inquiry";
+
+        // Setup mock URL
+        when(portfolioInfoServerProperties.getAccountInquiryUrl())
+            .thenReturn(mockUrl);
+
+        // Simulate network timeout scenario
+        when(restTemplate.postForEntity(
+            eq(mockUrl), 
+            any(HttpEntity.class), 
+            eq(String.class)
+        )).thenThrow(new RestClientException("Connect timeout"));
+
+        // Act
+        String result = service.getAccountInquiryData(request);
+
+        // Assert
+        assertEquals("", result);
+
+        // Verify logging
+        verify(logger).error(
+            contains("AccountInquiryUrl"), 
+            eq(mockUrl), 
+            any(RestClientException.class)
+        );
     }
 }
