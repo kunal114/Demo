@@ -1,20 +1,22 @@
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.slf4j.Logger;
-import org.springframework.http.HttpEntity;
-import org.springframework.web.client.RestClientException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class AccountInquiryServiceExceptionTest {
+class EntitledPortfoliosServiceTest {
 
     @Mock
     private RestTemplate restTemplate;
@@ -28,96 +30,133 @@ class AccountInquiryServiceExceptionTest {
     @InjectMocks
     private YourServiceClassName service;
 
+    private static final String TEST_USER_ID = "user123";
+    private static final String BASE_URL = "http://example.com/entitled-portfolios/";
+    private static final int MAX_RETRIES = 3;
+
+    @BeforeEach
+    void setUp() {
+        // Setup common mock behavior
+        when(portfolioInfoServerProperties.getEntitledPortfoliosUrl())
+            .thenReturn(BASE_URL);
+    }
+
     @Test
-    void testGetAccountInquiryData_RestClientException() throws IOException {
+    void testGetEntitledPortfolios_SuccessfulResponse() throws IOException {
         // Arrange
-        RestRequestInput request = new RestRequestInput(); // Replace with actual request object
-        String mockUrl = "http://example.com/account-inquiry";
+        String expectedResponse = "{\"portfolios\": [\"portfolio1\", \"portfolio2\"]}";
+        String fullUrl = BASE_URL + TEST_USER_ID;
 
-        // Setup mock URL
-        when(portfolioInfoServerProperties.getAccountInquiryUrl())
-            .thenReturn(mockUrl);
+        ResponseEntity<String> mockResponse = new ResponseEntity<>(
+            expectedResponse, 
+            HttpStatus.OK
+        );
 
-        // Simulate RestClientException
         when(restTemplate.postForEntity(
-            eq(mockUrl), 
-            any(HttpEntity.class), 
+            eq(fullUrl), 
+            isNull(), 
             eq(String.class)
-        )).thenThrow(new RestClientException("Connection failed"));
+        )).thenReturn(mockResponse);
 
         // Act
-        String result = service.getAccountInquiryData(request);
+        String actualResponse = service.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
 
         // Assert
-        assertEquals("", result);
-
-        // Verify logging
-        verify(logger).error(
-            contains("AccountInquiryUrl"), 
-            eq(mockUrl), 
-            any(RestClientException.class)
+        assertEquals(expectedResponse, actualResponse);
+        
+        // Verify interactions
+        verify(restTemplate).postForEntity(
+            eq(fullUrl), 
+            isNull(), 
+            eq(String.class)
+        );
+        verify(logger).info(
+            contains("Calling PBRepo FamilyEntitlementDAO API"),
+            eq(fullUrl)
         );
     }
 
     @Test
-    void testGetAccountInquiryData_GenericException() throws IOException {
+    void testGetEntitledPortfolios_NullResponse() throws IOException {
         // Arrange
-        RestRequestInput request = new RestRequestInput(); // Replace with actual request object
-        String mockUrl = "http://example.com/account-inquiry";
+        String fullUrl = BASE_URL + TEST_USER_ID;
 
-        // Setup mock URL
-        when(portfolioInfoServerProperties.getAccountInquiryUrl())
-            .thenReturn(mockUrl);
-
-        // Simulate generic Exception
         when(restTemplate.postForEntity(
-            eq(mockUrl), 
-            any(HttpEntity.class), 
+            eq(fullUrl), 
+            isNull(), 
             eq(String.class)
-        )).thenThrow(new RuntimeException("Unexpected error"));
+        )).thenReturn(null);
 
         // Act
-        String result = service.getAccountInquiryData(request);
+        String actualResponse = service.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
 
         // Assert
-        assertEquals("", result);
+        assertEquals("", actualResponse);
+    }
 
-        // Verify logging
-        verify(logger).error(
-            contains("AccountInquiryUrl"), 
-            eq(mockUrl), 
-            any(RuntimeException.class)
+    @Test
+    void testGetEntitledPortfolios_RetryMechanism() throws IOException {
+        // Arrange
+        String fullUrl = BASE_URL + TEST_USER_ID;
+        String expectedResponse = "{\"portfolios\": [\"portfolio1\"]}";
+
+        // Simulate failure on first two attempts, success on third
+        when(restTemplate.postForEntity(
+            eq(fullUrl), 
+            isNull(), 
+            eq(String.class)
+        )).thenThrow(new RuntimeException("First attempt failed"))
+          .thenThrow(new RuntimeException("Second attempt failed"))
+          .thenReturn(new ResponseEntity<>(expectedResponse, HttpStatus.OK));
+
+        // Act
+        String actualResponse = service.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
+
+        // Assert
+        assertEquals(expectedResponse, actualResponse);
+        
+        // Verify retry logging
+        verify(logger, times(2)).warn(
+            contains("Failed to get entitled portfolios"),
+            eq(TEST_USER_ID),
+            anyInt(),
+            eq(MAX_RETRIES),
+            anyString()
         );
     }
 
     @Test
-    void testGetAccountInquiryData_NetworkTimeout() throws IOException {
+    void testGetEntitledPortfolios_ExceedMaxRetries() {
         // Arrange
-        RestRequestInput request = new RestRequestInput(); // Replace with actual request object
-        String mockUrl = "http://example.com/account-inquiry";
+        String fullUrl = BASE_URL + TEST_USER_ID;
 
-        // Setup mock URL
-        when(portfolioInfoServerProperties.getAccountInquiryUrl())
-            .thenReturn(mockUrl);
-
-        // Simulate network timeout scenario
+        // Simulate consistent failure
         when(restTemplate.postForEntity(
-            eq(mockUrl), 
-            any(HttpEntity.class), 
+            eq(fullUrl), 
+            isNull(), 
             eq(String.class)
-        )).thenThrow(new RestClientException("Connect timeout"));
+        )).thenThrow(new RuntimeException("Persistent failure"));
 
-        // Act
-        String result = service.getAccountInquiryData(request);
+        // Act & Assert
+        assertThrows(IOException.class, () -> {
+            service.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
+        });
 
-        // Assert
-        assertEquals("", result);
-
-        // Verify logging
-        verify(logger).error(
-            contains("AccountInquiryUrl"), 
-            eq(mockUrl), 
-            any(RestClientException.class)
+        // Verify retry attempts and final error logging
+        verify(logger, times(MAX_RETRIES)).warn(
+            contains("Failed to get entitled portfolios"),
+            eq(TEST_USER_ID),
+            anyInt(),
+            eq(MAX_RETRIES),
+            anyString()
         );
+    }
+
+    @Test
+    void testGetEntitledPortfolios_NullUserId() {
+        // Act & Assert
+        assertThrows(IllegalArgumentException.class, () -> {
+            service.getEntitledPortfolios(null, 0, MAX_RETRIES);
+        });
     }
 }
