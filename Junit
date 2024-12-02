@@ -4,6 +4,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.Logger;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
@@ -14,72 +15,105 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class PositionDetailRepositoryTest {
+class PortfolioRepositoryTest {
 
     @Mock
-    private AppEnvProperties appEnvProperties;
+    private PortfolioInfoServerProperties portfolioInfoServerProperties;
 
     @Mock
     private RestTemplate restTemplate;
 
+    @Mock
+    private Logger logger;
+
     @InjectMocks
-    private PositionDetailRepository positionDetailRepository;
+    private PortfolioRepository portfolioRepository;
+
+    private static final String TEST_USER_ID = "testUser123";
+    private static final String TEST_URL = "http://test-url.com/";
+    private static final int MAX_RETRIES = 3;
 
     @BeforeEach
     void setUp() {
-        // Any setup required before each test
+        when(portfolioInfoServerProperties.getEntitledPortfoliosUrl()).thenReturn(TEST_URL);
     }
 
     @Test
-    void testGetPositionDetailData_SuccessfulResponse() throws IOException {
+    void testGetEntitledPortfolios_SuccessfulRetrieval() throws IOException {
         // Arrange
-        RestRequestInput mockRequest = mock(RestRequestInput.class);
-        String mockUrl = "http://test-url.com";
-        String expectedResponseBody = "{\"key\": \"value\"}";
+        String expectedResponse = "{\"portfolios\": [\"portfolio1\", \"portfolio2\"]}";
+        String fullUrl = TEST_URL + TEST_USER_ID;
 
-        when(appEnvProperties.getPositionDetailUrl()).thenReturn(mockUrl);
-        when(restTemplate.postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class)))
-            .thenReturn(new ResponseEntity<>(expectedResponseBody, HttpStatus.OK));
+        when(restTemplate.postForEntity(eq(fullUrl), isNull(), eq(String.class)))
+            .thenReturn(new ResponseEntity<>(expectedResponse, HttpStatus.OK));
 
         // Act
-        String actualResponse = positionDetailRepository.getPositionDetailData(mockRequest);
+        String actualResponse = portfolioRepository.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
 
         // Assert
-        assertEquals(expectedResponseBody, actualResponse);
-        verify(restTemplate).postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class));
+        assertEquals(expectedResponse, actualResponse);
+        verify(logger).info(contains("Calling PBRepo FamilyEntitlementDAO API with C2C"), eq(fullUrl));
+        verify(restTemplate).postForEntity(eq(fullUrl), isNull(), eq(String.class));
     }
 
     @Test
-    void testGetPositionDetailData_NullResponse() throws IOException {
+    void testGetEntitledPortfolios_NullResponse() throws IOException {
         // Arrange
-        RestRequestInput mockRequest = mock(RestRequestInput.class);
-        String mockUrl = "http://test-url.com";
+        String fullUrl = TEST_URL + TEST_USER_ID;
 
-        when(appEnvProperties.getPositionDetailUrl()).thenReturn(mockUrl);
-        when(restTemplate.postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class)))
+        when(restTemplate.postForEntity(eq(fullUrl), isNull(), eq(String.class)))
             .thenReturn(null);
 
         // Act
-        String actualResponse = positionDetailRepository.getPositionDetailData(mockRequest);
+        String actualResponse = portfolioRepository.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
 
         // Assert
         assertEquals("", actualResponse);
-        verify(restTemplate).postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class));
     }
 
     @Test
-    void testGetPositionDetailData_ExceptionHandling() throws IOException {
+    void testGetEntitledPortfolios_RetrySucceeds() throws IOException {
         // Arrange
-        RestRequestInput mockRequest = mock(RestRequestInput.class);
-        String mockUrl = "http://test-url.com";
+        String fullUrl = TEST_URL + TEST_USER_ID;
+        String expectedResponse = "{\"portfolios\": [\"portfolio1\"]}";
 
-        when(appEnvProperties.getPositionDetailUrl()).thenReturn(mockUrl);
-        when(restTemplate.postForEntity(eq(mockUrl), eq(mockRequest), eq(String.class)))
-            .thenThrow(new RuntimeException("Test Exception"));
+        when(restTemplate.postForEntity(eq(fullUrl), isNull(), eq(String.class)))
+            .thenThrow(new RuntimeException("First attempt failed"))
+            .thenThrow(new RuntimeException("Second attempt failed"))
+            .thenReturn(new ResponseEntity<>(expectedResponse, HttpStatus.OK));
+
+        // Act
+        String actualResponse = portfolioRepository.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
+
+        // Assert
+        assertEquals(expectedResponse, actualResponse);
+        verify(logger, times(2)).warn(
+            contains("Failed to get entitled portfolios for user"),
+            eq(TEST_USER_ID), anyInt(), eq(MAX_RETRIES), anyString()
+        );
+    }
+
+    @Test
+    void testGetEntitledPortfolios_MaxRetriesExceeded() {
+        // Arrange
+        String fullUrl = TEST_URL + TEST_USER_ID;
+
+        when(restTemplate.postForEntity(eq(fullUrl), isNull(), eq(String.class)))
+            .thenThrow(new RuntimeException("Persistent failure"));
 
         // Act & Assert
         assertThrows(IOException.class, () -> {
-            positionDetailRepository.getPositionDetailData(mockRequest);
+            portfolioRepository.getEntitledPortfolios(TEST_USER_ID, 0, MAX_RETRIES);
         });
+
+        // Verify logging and retry attempts
+        verify(logger, times(MAX_RETRIES - 1)).warn(
+            contains("Failed to get entitled portfolios for user"),
+            eq(TEST_USER_ID), anyInt(), eq(MAX_RETRIES), anyString()
+        );
+        verify(logger).error(
+            contains("Calling PBRepo FamilyEntitlementDAO API with C2C"),
+            anyString(), anyString()
+        );
     }
 }
