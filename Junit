@@ -4,18 +4,20 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.slf4j.Logger;
+import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.client.RestTemplate;
 
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class PortfolioInfoServiceTest {
+class AccountInquiryServiceTest {
 
     @Mock
     private RestTemplate restTemplate;
@@ -23,74 +25,114 @@ class PortfolioInfoServiceTest {
     @Mock
     private PortfolioInfoServerProperties portfolioInfoServerProperties;
 
+    @Mock
+    private Logger logger;
+
     @InjectMocks
-    private PortfolioInfoService portfolioInfoService;
+    private AccountInquiryService accountInquiryService;
+
+    private RestRequestInput mockRequest;
 
     @BeforeEach
     void setUp() {
-        // Setup mock behavior for server properties
-        when(portfolioInfoServerProperties.getPortfolioInfoUrl())
-            .thenReturn("http://example.com/portfolio-info");
+        // Prepare a mock request
+        mockRequest = new RestRequestInput();
+        mockRequest.setAccountId("TEST123");
+
+        // Setup mock URL
+        when(portfolioInfoServerProperties.getAccountInquiryUrl())
+            .thenReturn("http://example.com/account-inquiry");
     }
 
     @Test
-    void testGetPortfolioInfoData_SuccessfulResponse() throws IOException {
+    void testGetAccountInquiryData_SuccessfulResponse() throws IOException {
         // Arrange
-        String expectedResponse = "{\"portfolio\": \"data\"}";
+        String expectedResponse = "{\"accountDetails\": \"sample data\"}";
         ResponseEntity<String> mockResponse = new ResponseEntity<>(
             expectedResponse, 
             HttpStatus.OK
         );
 
+        // Create HttpEntity matcher
+        HttpEntity<RestRequestInput> expectedEntity = new HttpEntity<>(mockRequest);
+
         when(restTemplate.postForEntity(
-            eq(portfolioInfoServerProperties.getPortfolioInfoUrl()), 
-            isNull(), 
+            eq(portfolioInfoServerProperties.getAccountInquiryUrl()), 
+            eq(expectedEntity), 
             eq(String.class)
         )).thenReturn(mockResponse);
 
         // Act
-        String actualResponse = portfolioInfoService.getPortfolioInfoData();
+        String actualResponse = accountInquiryService.getAccountInquiryData(mockRequest);
 
         // Assert
         assertEquals(expectedResponse, actualResponse);
+        
+        // Verify interactions
         verify(restTemplate).postForEntity(
-            portfolioInfoServerProperties.getPortfolioInfoUrl(), 
-            null, 
+            portfolioInfoServerProperties.getAccountInquiryUrl(), 
+            expectedEntity, 
             String.class
         );
+        verify(logger).info(contains("CALLING_API_LOG"), 
+            eq(portfolioInfoServerProperties.getAccountInquiryUrl()));
     }
 
     @Test
-    void testGetPortfolioInfoData_NullResponse() throws IOException {
+    void testGetAccountInquiryData_NullResponse() throws IOException {
         // Arrange
+        HttpEntity<RestRequestInput> expectedEntity = new HttpEntity<>(mockRequest);
+
         when(restTemplate.postForEntity(
-            eq(portfolioInfoServerProperties.getPortfolioInfoUrl()), 
-            isNull(), 
+            eq(portfolioInfoServerProperties.getAccountInquiryUrl()), 
+            eq(expectedEntity), 
             eq(String.class)
         )).thenReturn(null);
 
         // Act
-        String actualResponse = portfolioInfoService.getPortfolioInfoData();
+        String actualResponse = accountInquiryService.getAccountInquiryData(mockRequest);
 
         // Assert
-        assertNull(actualResponse);
+        assertEquals("", actualResponse);
+        
+        // Verify interactions
         verify(restTemplate).postForEntity(
-            portfolioInfoServerProperties.getPortfolioInfoUrl(), 
-            null, 
+            portfolioInfoServerProperties.getAccountInquiryUrl(), 
+            expectedEntity, 
             String.class
         );
     }
 
     @Test
-    void testGetPortfolioInfoData_ExceptionHandling() throws IOException {
+    void testGetAccountInquiryData_ExceptionHandling() throws IOException {
         // Arrange
+        HttpEntity<RestRequestInput> expectedEntity = new HttpEntity<>(mockRequest);
+
         when(restTemplate.postForEntity(
-            eq(portfolioInfoServerProperties.getPortfolioInfoUrl()), 
-            isNull(), 
+            eq(portfolioInfoServerProperties.getAccountInquiryUrl()), 
+            eq(expectedEntity), 
             eq(String.class)
         )).thenThrow(new RuntimeException("Network error"));
 
-        // Act & Assert
-        assertNull(portfolioInfoService.getPortfolioInfoData());
+        // Act
+        String actualResponse = accountInquiryService.getAccountInquiryData(mockRequest);
+
+        // Assert
+        assertEquals("", actualResponse);
+        
+        // Verify error logging
+        verify(logger).error(
+            contains("AccountInquiryUrl"),
+            eq(portfolioInfoServerProperties.getAccountInquiryUrl()),
+            any(RuntimeException.class)
+        );
+    }
+
+    @Test
+    void testGetAccountInquiryData_NullRequest() {
+        // Assert that method handles null request gracefully
+        assertThrows(IllegalArgumentException.class, () -> {
+            accountInquiryService.getAccountInquiryData(null);
+        });
     }
 }
