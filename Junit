@@ -1,5 +1,6 @@
 import builtins
 import os
+import sys
 import boto3
 import pytest
 from mock.mock import MagicMock
@@ -7,7 +8,11 @@ from mock.mock import MagicMock
 from moto import mock_aws
 os.environ["AWS_DEFAULT_REGION"] = 'us-east-1'
 
-from lambdas import lambda_function
+# Add the src directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+# Import from the specific path in your project structure
+from fiportal_secret_rotation_lambda.lambda_function import lambda_handler
 
 @mock_aws
 def test_create_secret():
@@ -29,7 +34,7 @@ def test_create_secret():
     context = {}
 
     # Call lambda handler
-    lambda_function.lambda_handler(event, context)
+    lambda_handler(event, context)
 
     # Verify AWSPENDING version was created
     secret_versions = secretsmanager_client.describe_secret(SecretId=secret_arn)['VersionIdsToStages']
@@ -53,7 +58,7 @@ def test_finish_secret():
         'SecretId': secret_arn,
         'ClientRequestToken': 'test-token-finish'
     }
-    lambda_function.lambda_handler(create_event, {})
+    lambda_handler(create_event, {})
 
     # Now finish the secret rotation
     finish_event = {
@@ -61,7 +66,7 @@ def test_finish_secret():
         'SecretId': secret_arn,
         'ClientRequestToken': 'test-token-finish'
     }
-    lambda_function.lambda_handler(finish_event, {})
+    lambda_handler(finish_event, {})
 
     # Verify version stages
     secret_versions = secretsmanager_client.describe_secret(SecretId=secret_arn)['VersionIdsToStages']
@@ -92,7 +97,7 @@ def test_update_secret():
     context = {}
 
     # Call lambda handler
-    lambda_function.lambda_handler(event, context)
+    lambda_handler(event, context)
 
     # Retrieve updated secret
     updated_secret = secretsmanager_client.get_secret_value(
@@ -123,4 +128,4 @@ def test_invalid_step():
 
     # Expect ValueError for invalid step
     with pytest.raises(ValueError, match='Invalid request step parameter'):
-        lambda_function.lambda_handler(event, context)
+        lambda_handler(event, context)
