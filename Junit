@@ -1,2 +1,143 @@
-# Exclude specific files or patterns
-sonar.exclusions=**/path/to/file/to/exclude.py,**/another/file/to/exclude.py
+import unittest
+import boto3
+import json
+import base64
+from unittest.mock import patch, MagicMock
+from moto import mock_secretsmanager
+
+# Import the functions from your original script
+# Assume the original script is named secret_rotation.py
+from secret_rotation import (
+    lambda_handler, 
+    create_secret, 
+    finish_secret, 
+    update_secret, 
+    execute_step
+)
+
+class TestSecretsManagerRotation(unittest.TestCase):
+    def setUp(self):
+        # Start mocking AWS services
+        self.mock_secretsmanager = mock_secretsmanager()
+        self.mock_secretsmanager.start()
+        
+        # Create a Secrets Manager client
+        self.secretsmanager_client = boto3.client('secretsmanager', region_name='us-east-1')
+        
+        # Create a test secret
+        self.secret_arn = self.secretsmanager_client.create_secret(
+            Name='test-secret',
+            SecretString=json.dumps({'username': 'testuser', 'password': 'oldpassword'})
+        )['ARN']
+
+    def tearDown(self):
+        # Stop mocking AWS services
+        self.mock_secretsmanager.stop()
+
+    def test_lambda_handler_create_secret(self):
+        # Prepare test event for createSecret step
+        event = {
+            'Step': 'createSecret',
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': 'test-token-1'
+        }
+        context = {}
+
+        # Call lambda handler
+        lambda_handler(event, context)
+
+        # Verify AWSPENDING version was created
+        secret_versions = self.secretsmanager_client.describe_secret(SecretId=self.secret_arn)['VersionIdsToStages']
+        self.assertIn('test-token-1', secret_versions)
+        self.assertIn('AWSPENDING', secret_versions['test-token-1'])
+
+    def test_lambda_handler_finish_secret(self):
+        # First, create a pending secret
+        create_event = {
+            'Step': 'createSecret',
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': 'test-token-2'
+        }
+        lambda_handler(create_event, {})
+
+        # Now finish the secret rotation
+        finish_event = {
+            'Step': 'finishSecret',
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': 'test-token-2'
+        }
+        lambda_handler(finish_event, {})
+
+        # Verify version stages
+        secret_versions = self.secretsmanager_client.describe_secret(SecretId=self.secret_arn)['VersionIdsToStages']
+        self.assertIn('test-token-2', secret_versions)
+        self.assertIn('AWSCURRENT', secret_versions['test-token-2'])
+
+    def test_update_secret(self):
+        # Prepare test data
+        new_password = 'newpassword123!'
+
+        # Call update_secret
+        update_secret(self.secretsmanager_client, self.secret_arn, new_password)
+
+        # Retrieve updated secret
+        updated_secret = self.secretsmanager_client.get_secret_value(
+            SecretId=self.secret_arn,
+            VersionStage='AWSCURRENT'
+        )
+        updated_secret_data = json.loads(updated_secret['SecretString'])
+
+        # Assert password was updated
+        self.assertEqual(updated_secret_data['password'], new_password)
+
+    def test_execute_step_invalid_step(self):
+        # Test that an invalid step raises a ValueError
+        with self.assertRaises(ValueError):
+            execute_step('invalidStep', self.secretsmanager_client, 
+                         self.secret_arn, 'test-token', 'password')
+
+    def test_lambda_handler_no_rotation_enabled(self):
+        # Disable rotation for the secret
+        self.secretsmanager_client.rotate_secret(
+            SecretId=self.secret_arn,
+            RotationRules={'AutomaticallyAfterDays': 0}
+        )
+
+        # Prepare test event
+        event = {
+            'Step': 'createSecret',
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': 'test-token-3'
+        }
+        
+        # This should raise a ValueError due to rotation not being enabled
+        with self.assertRaises(ValueError) as context:
+            lambda_handler(event, {})
+        
+        self.assertTrue('not enabled for rotation' in str(context.exception))
+
+    def test_create_secret_with_secret_binary(self):
+        # Create a secret with binary content
+        binary_secret_arn = self.secretsmanager_client.create_secret(
+            Name='binary-test-secret',
+            SecretBinary=base64.b64encode(b'initial binary secret')
+        )['ARN']
+
+        # Prepare test event for createSecret step with binary secret
+        event = {
+            'Step': 'createSecret',
+            'SecretId': binary_secret_arn,
+            'ClientRequestToken': 'binary-token'
+        }
+        context = {}
+
+        # Call lambda handler
+        lambda_handler(event, context)
+
+        # Verify AWSPENDING version was created
+        secret_versions = self.secretsmanager_client.describe_secret(SecretId=binary_secret_arn)['VersionIdsToStages']
+        self.assertIn('binary-token', secret_versions)
+        self.assertIn('AWSPENDING', secret_versions['binary-token'])
+
+if __name__ == '__main__':
+    unittest.main()
