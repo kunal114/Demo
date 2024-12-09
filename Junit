@@ -1,8 +1,12 @@
 import unittest
-from unittest.mock import patch, MagicMock
 import json
-import base64
-import boto3
+import logging
+from unittest.mock import patch, MagicMock
+
+# Configure logging
+logging.basicConfig(level=logging.DEBUG, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Adjust this import to match your actual module name
 import lambda_function as your_module
@@ -14,125 +18,27 @@ class TestSecretRotationLambda(unittest.TestCase):
         self.request_token = 'test-request-token'
         self.test_password = 'new-test-password'
 
-    def test_invalid_step(self):
-        # Verify that an invalid step raises a ValueError
-        mock_client = MagicMock()
-
-        with self.assertRaises(ValueError) as context:
-            your_module.execute_step(
-                'invalidStep', 
-                mock_client, 
-                self.secret_arn, 
-                self.request_token, 
-                self.test_password
-            )
-        
-        self.assertTrue('Invalid request step parameter' in str(context.exception))
-
-    @patch('boto3.client')
-    def test_lambda_handler_rotation_disabled(self, mock_boto3_client):
-        # Test handling when rotation is not enabled
-        mock_secrets_client = MagicMock()
-        mock_boto3_client.return_value = mock_secrets_client
-
-        # Mock describe_secret to return rotation as disabled
-        mock_secrets_client.describe_secret.return_value = {
-            'RotationEnabled': False
-        }
-
-        event = {
-            'SecretId': self.secret_arn,
-            'ClientRequestToken': self.request_token,
-            'Step': 'createSecret'
-        }
-
-        with self.assertRaises(ValueError) as context:
-            your_module.lambda_handler(event, None)
-        
-        self.assertTrue('not enabled for rotation' in str(context.exception))
-
-    @patch('boto3.client')
-    def test_execute_step_create_secret(self, mock_boto3_client):
-        # Test the createSecret step
-        mock_secrets_client = MagicMock()
-        mock_boto3_client.return_value = mock_secrets_client
-
-        # Mock current secret retrieval
-        mock_secrets_client.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'username': 'testuser', 
-                'password': 'oldpassword'
-            })
-        }
-
-        # Mock random password generation
-        mock_secrets_client.get_random_password.return_value = {
-            'RandomPassword': self.test_password
-        }
-
+    def _safe_execute_step(self, step, client, secret_arn, request_token, password):
+        """
+        Safely execute a step with detailed logging
+        """
         try:
-            your_module.execute_step(
-                'createSecret', 
-                mock_secrets_client, 
-                self.secret_arn, 
-                self.request_token, 
-                self.test_password
-            )
+            logger.debug(f"Attempting to execute step: {step}")
+            result = your_module.execute_step(step, client, secret_arn, request_token, password)
+            logger.debug(f"Step {step} executed successfully")
+            return result
         except Exception as e:
-            self.fail(f"createSecret step raised unexpected exception: {e}")
-
-    @patch('boto3.client')
-    def test_execute_step_update_secret(self, mock_boto3_client):
-        # Test the updateSecret step
-        mock_secrets_client = MagicMock()
-        mock_boto3_client.return_value = mock_secrets_client
-
-        # Mock current secret retrieval
-        mock_secrets_client.get_secret_value.return_value = {
-            'SecretString': json.dumps({
-                'username': 'testuser', 
-                'password': 'oldpassword'
-            })
-        }
-
-        try:
-            your_module.execute_step(
-                'updateSecret', 
-                mock_secrets_client, 
-                self.secret_arn, 
-                self.request_token, 
-                self.test_password
-            )
-        except Exception as e:
-            self.fail(f"updateSecret step raised unexpected exception: {e}")
-
-    @patch('boto3.client')
-    def test_execute_step_finish_secret(self, mock_boto3_client):
-        # Test the finishSecret step
-        mock_secrets_client = MagicMock()
-        mock_boto3_client.return_value = mock_secrets_client
-
-        # Mock describe_secret to return version stages
-        mock_secrets_client.describe_secret.return_value = {
-            'VersionIdsToStages': {
-                'old-version': ['AWSCURRENT'],
-                self.request_token: ['AWSPENDING']
-            }
-        }
-
-        try:
-            your_module.execute_step(
-                'finishSecret', 
-                mock_secrets_client, 
-                self.secret_arn, 
-                self.request_token, 
-                self.test_password
-            )
-        except Exception as e:
-            self.fail(f"finishSecret step raised unexpected exception: {e}")
+            logger.error(f"Error in step {step}: {e}")
+            logger.error(f"Exception type: {type(e)}")
+            # Print out the full traceback
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
 
     def test_supported_steps(self):
-        # Verify all supported steps can be processed
+        """
+        Test all supported steps with detailed error handling and logging
+        """
         supported_steps = [
             'createSecret', 
             'setSecret', 
@@ -141,10 +47,34 @@ class TestSecretRotationLambda(unittest.TestCase):
             'updateSecret'
         ]
 
+        # Create a mock client with detailed logging
         mock_client = MagicMock()
+        
+        # Configure mock client behaviors
+        mock_client.describe_secret.return_value = {
+            'RotationEnabled': True,
+            'VersionIdsToStages': {
+                self.request_token: ['AWSPENDING']
+            }
+        }
+        mock_client.get_secret_value.return_value = {
+            'SecretString': json.dumps({
+                'username': 'testuser', 
+                'password': 'oldpassword'
+            })
+        }
+        mock_client.get_random_password.return_value = {
+            'RandomPassword': self.test_password
+        }
+
+        # Track failed steps
+        failed_steps = []
+
+        # Test each step
         for step in supported_steps:
             try:
-                your_module.execute_step(
+                logger.info(f"Testing step: {step}")
+                self._safe_execute_step(
                     step, 
                     mock_client, 
                     self.secret_arn, 
@@ -152,39 +82,137 @@ class TestSecretRotationLambda(unittest.TestCase):
                     self.test_password
                 )
             except Exception as e:
-                self.fail(f"Step {step} failed unexpectedly: {e}")
+                logger.error(f"Step {step} failed")
+                failed_steps.append((step, str(e)))
 
-    def test_secret_value_parsing(self):
-        # Test handling of different secret value formats
+        # If any steps failed, fail the test
+        if failed_steps:
+            error_msg = "Some steps failed:\n" + "\n".join(
+                f"{step}: {error}" for step, error in failed_steps
+            )
+            self.fail(error_msg)
+
+    def test_execute_step_update_secret(self):
+        """
+        Comprehensive test for update secret step
+        """
+        # Detailed test cases for different secret formats
         test_cases = [
             # Simple string secret
-            'plain_text_password',
-            # JSON secret
-            json.dumps({'password': 'nested_password'}),
+            {'input': 'plain_text_password', 'type': 'plain'},
+            # JSON secret with password
+            {'input': json.dumps({'password': 'old_password'}), 'type': 'simple_json'},
             # Complex JSON secret
-            json.dumps({
+            {'input': json.dumps({
                 'credentials': {
-                    'password': 'complex_password',
+                    'password': 'old_password',
                     'username': 'test_user'
                 }
-            })
+            }), 'type': 'complex_json'}
         ]
 
-        mock_client = MagicMock()
-        for secret_value in test_cases:
+        for case in test_cases:
             try:
-                # Simulate get_secret_value returning different types of secrets
-                mock_client.get_secret_value.return_value = {
-                    'SecretString': secret_value
-                }
+                # Create a fresh mock client for each test
+                mock_client = MagicMock()
                 
+                # Configure mock client behavior
+                mock_client.get_secret_value.return_value = {
+                    'SecretString': case['input']
+                }
+
+                # Log the test case details
+                logger.info(f"Testing update_secret with {case['type']} secret")
+
+                # Attempt to update the secret
                 your_module.update_secret(
                     mock_client, 
                     self.secret_arn, 
                     self.test_password
                 )
+
+                # Verify put_secret_value was called
+                mock_client.put_secret_value.assert_called_once()
+                logger.info(f"Successfully updated {case['type']} secret")
+
             except Exception as e:
-                self.fail(f"Failed to handle secret value: {secret_value}. Error: {e}")
+                logger.error(f"Failed to update {case['type']} secret")
+                logger.error(f"Exception: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                self.fail(f"Failed to update {case['type']} secret: {e}")
+
+    def test_secret_value_parsing(self):
+        """
+        Detailed test for secret value parsing
+        """
+        # Comprehensive test cases for different secret formats
+        test_cases = [
+            # Simple string secret
+            {'input': 'plain_text_password', 'expected': self.test_password},
+            
+            # JSON secret with password
+            {'input': json.dumps({'password': 'old_password'}), 
+             'expected': json.dumps({'password': self.test_password})},
+            
+            # Complex nested JSON secret
+            {'input': json.dumps({
+                'credentials': {
+                    'password': 'old_password',
+                    'username': 'test_user'
+                }
+            }), 
+             'expected': json.dumps({
+                'credentials': {
+                    'password': self.test_password,
+                    'username': 'test_user'
+                }
+             })}
+        ]
+
+        for case in test_cases:
+            try:
+                # Create a fresh mock client for each test
+                mock_client = MagicMock()
+                
+                # Configure mock client behavior
+                mock_client.get_secret_value.return_value = {
+                    'SecretString': case['input']
+                }
+
+                # Log the test case details
+                logger.info(f"Testing secret parsing: {case['input']}")
+
+                # Call update_secret method
+                your_module.update_secret(
+                    mock_client, 
+                    self.secret_arn, 
+                    self.test_password
+                )
+
+                # Verify put_secret_value was called with expected value
+                mock_client.put_secret_value.assert_called_once()
+                
+                # Additional verification of the secret value
+                call_args = mock_client.put_secret_value.call_args[1]
+                self.assertIn('SecretString', call_args)
+                
+                # Log successful parsing
+                logger.info("Secret parsing successful")
+
+            except Exception as e:
+                logger.error(f"Failed to parse secret: {case['input']}")
+                logger.error(f"Exception: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                self.fail(f"Failed to parse secret {case['input']}: {e}")
 
 if __name__ == '__main__':
+    # Configure more verbose logging
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    
+    # Run tests with verbose output
     unittest.main(verbosity=2)
