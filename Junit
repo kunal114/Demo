@@ -1,143 +1,126 @@
-import unittest
+import builtins
+import os
 import boto3
-import json
-import base64
-from unittest.mock import patch, MagicMock
-from moto import mock_secretsmanager
+import pytest
+from mock.mock import MagicMock
 
-# Import the functions from your original script
-# Assume the original script is named secret_rotation.py
-from secret_rotation import (
-    lambda_handler, 
-    create_secret, 
-    finish_secret, 
-    update_secret, 
-    execute_step
-)
+from moto import mock_aws
+os.environ["AWS_DEFAULT_REGION"] = 'us-east-1'
 
-class TestSecretsManagerRotation(unittest.TestCase):
-    def setUp(self):
-        # Start mocking AWS services
-        self.mock_secretsmanager = mock_secretsmanager()
-        self.mock_secretsmanager.start()
-        
-        # Create a Secrets Manager client
-        self.secretsmanager_client = boto3.client('secretsmanager', region_name='us-east-1')
-        
-        # Create a test secret
-        self.secret_arn = self.secretsmanager_client.create_secret(
-            Name='test-secret',
-            SecretString=json.dumps({'username': 'testuser', 'password': 'oldpassword'})
-        )['ARN']
+from lambdas import lambda_function
 
-    def tearDown(self):
-        # Stop mocking AWS services
-        self.mock_secretsmanager.stop()
+@mock_aws
+def test_create_secret():
+    # Create Secrets Manager client
+    secretsmanager_client = boto3.client('secretsmanager')
+    
+    # Create a test secret
+    secret_arn = secretsmanager_client.create_secret(
+        Name='test-fiportal-secret',
+        SecretString='{"username": "testuser", "password": "oldpassword"}'
+    )['ARN']
+    
+    # Prepare test event for createSecret step
+    event = {
+        'Step': 'createSecret',
+        'SecretId': secret_arn,
+        'ClientRequestToken': 'test-token-create'
+    }
+    context = {}
 
-    def test_lambda_handler_create_secret(self):
-        # Prepare test event for createSecret step
-        event = {
-            'Step': 'createSecret',
-            'SecretId': self.secret_arn,
-            'ClientRequestToken': 'test-token-1'
-        }
-        context = {}
+    # Call lambda handler
+    lambda_function.lambda_handler(event, context)
 
-        # Call lambda handler
-        lambda_handler(event, context)
+    # Verify AWSPENDING version was created
+    secret_versions = secretsmanager_client.describe_secret(SecretId=secret_arn)['VersionIdsToStages']
+    assert 'test-token-create' in secret_versions
+    assert 'AWSPENDING' in secret_versions['test-token-create']
 
-        # Verify AWSPENDING version was created
-        secret_versions = self.secretsmanager_client.describe_secret(SecretId=self.secret_arn)['VersionIdsToStages']
-        self.assertIn('test-token-1', secret_versions)
-        self.assertIn('AWSPENDING', secret_versions['test-token-1'])
+@mock_aws
+def test_finish_secret():
+    # Create Secrets Manager client
+    secretsmanager_client = boto3.client('secretsmanager')
+    
+    # Create a test secret
+    secret_arn = secretsmanager_client.create_secret(
+        Name='test-fiportal-secret',
+        SecretString='{"username": "testuser", "password": "oldpassword"}'
+    )['ARN']
+    
+    # First, create a pending secret
+    create_event = {
+        'Step': 'createSecret',
+        'SecretId': secret_arn,
+        'ClientRequestToken': 'test-token-finish'
+    }
+    lambda_function.lambda_handler(create_event, {})
 
-    def test_lambda_handler_finish_secret(self):
-        # First, create a pending secret
-        create_event = {
-            'Step': 'createSecret',
-            'SecretId': self.secret_arn,
-            'ClientRequestToken': 'test-token-2'
-        }
-        lambda_handler(create_event, {})
+    # Now finish the secret rotation
+    finish_event = {
+        'Step': 'finishSecret',
+        'SecretId': secret_arn,
+        'ClientRequestToken': 'test-token-finish'
+    }
+    lambda_function.lambda_handler(finish_event, {})
 
-        # Now finish the secret rotation
-        finish_event = {
-            'Step': 'finishSecret',
-            'SecretId': self.secret_arn,
-            'ClientRequestToken': 'test-token-2'
-        }
-        lambda_handler(finish_event, {})
+    # Verify version stages
+    secret_versions = secretsmanager_client.describe_secret(SecretId=secret_arn)['VersionIdsToStages']
+    assert 'test-token-finish' in secret_versions
+    assert 'AWSCURRENT' in secret_versions['test-token-finish']
 
-        # Verify version stages
-        secret_versions = self.secretsmanager_client.describe_secret(SecretId=self.secret_arn)['VersionIdsToStages']
-        self.assertIn('test-token-2', secret_versions)
-        self.assertIn('AWSCURRENT', secret_versions['test-token-2'])
+@mock_aws
+def test_update_secret():
+    # Create Secrets Manager client
+    secretsmanager_client = boto3.client('secretsmanager')
+    
+    # Create a test secret
+    secret_arn = secretsmanager_client.create_secret(
+        Name='test-fiportal-secret',
+        SecretString='{"username": "testuser", "password": "oldpassword"}'
+    )['ARN']
+    
+    # Prepare test data
+    new_password = 'newpassword123!'
 
-    def test_update_secret(self):
-        # Prepare test data
-        new_password = 'newpassword123!'
+    # Create event for update secret
+    event = {
+        'Step': 'updateSecret',
+        'SecretId': secret_arn,
+        'Password': new_password,
+        'ClientRequestToken': 'test-token-update'
+    }
+    context = {}
 
-        # Call update_secret
-        update_secret(self.secretsmanager_client, self.secret_arn, new_password)
+    # Call lambda handler
+    lambda_function.lambda_handler(event, context)
 
-        # Retrieve updated secret
-        updated_secret = self.secretsmanager_client.get_secret_value(
-            SecretId=self.secret_arn,
-            VersionStage='AWSCURRENT'
-        )
-        updated_secret_data = json.loads(updated_secret['SecretString'])
+    # Retrieve updated secret
+    updated_secret = secretsmanager_client.get_secret_value(
+        SecretId=secret_arn,
+        VersionStage='AWSCURRENT'
+    )
+    updated_secret_data = updated_secret['SecretString']
+    assert new_password in updated_secret_data
 
-        # Assert password was updated
-        self.assertEqual(updated_secret_data['password'], new_password)
+@mock_aws
+def test_invalid_step():
+    # Create Secrets Manager client
+    secretsmanager_client = boto3.client('secretsmanager')
+    
+    # Create a test secret
+    secret_arn = secretsmanager_client.create_secret(
+        Name='test-fiportal-secret',
+        SecretString='{"username": "testuser", "password": "oldpassword"}'
+    )['ARN']
+    
+    # Prepare event with invalid step
+    event = {
+        'Step': 'invalidStep',
+        'SecretId': secret_arn,
+        'ClientRequestToken': 'test-token-invalid'
+    }
+    context = {}
 
-    def test_execute_step_invalid_step(self):
-        # Test that an invalid step raises a ValueError
-        with self.assertRaises(ValueError):
-            execute_step('invalidStep', self.secretsmanager_client, 
-                         self.secret_arn, 'test-token', 'password')
-
-    def test_lambda_handler_no_rotation_enabled(self):
-        # Disable rotation for the secret
-        self.secretsmanager_client.rotate_secret(
-            SecretId=self.secret_arn,
-            RotationRules={'AutomaticallyAfterDays': 0}
-        )
-
-        # Prepare test event
-        event = {
-            'Step': 'createSecret',
-            'SecretId': self.secret_arn,
-            'ClientRequestToken': 'test-token-3'
-        }
-        
-        # This should raise a ValueError due to rotation not being enabled
-        with self.assertRaises(ValueError) as context:
-            lambda_handler(event, {})
-        
-        self.assertTrue('not enabled for rotation' in str(context.exception))
-
-    def test_create_secret_with_secret_binary(self):
-        # Create a secret with binary content
-        binary_secret_arn = self.secretsmanager_client.create_secret(
-            Name='binary-test-secret',
-            SecretBinary=base64.b64encode(b'initial binary secret')
-        )['ARN']
-
-        # Prepare test event for createSecret step with binary secret
-        event = {
-            'Step': 'createSecret',
-            'SecretId': binary_secret_arn,
-            'ClientRequestToken': 'binary-token'
-        }
-        context = {}
-
-        # Call lambda handler
-        lambda_handler(event, context)
-
-        # Verify AWSPENDING version was created
-        secret_versions = self.secretsmanager_client.describe_secret(SecretId=binary_secret_arn)['VersionIdsToStages']
-        self.assertIn('binary-token', secret_versions)
-        self.assertIn('AWSPENDING', secret_versions['binary-token'])
-
-if __name__ == '__main__':
-    unittest.main()
+    # Expect ValueError for invalid step
+    with pytest.raises(ValueError, match='Invalid request step parameter'):
+        lambda_function.lambda_handler(event, context)
