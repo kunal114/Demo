@@ -1,131 +1,179 @@
-import builtins
-import os
-import sys
+import unittest
+from unittest.mock import patch, MagicMock
+import json
+import base64
 import boto3
-import pytest
-from mock.mock import MagicMock
 
-from moto import mock_aws
-os.environ["AWS_DEFAULT_REGION"] = 'us-east-1'
+# Import the module containing the original lambda function
+# Replace 'your_module' with the actual module name where the lambda handler is defined
+import your_module
 
-# Add the src directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+class TestSecretRotationLambdaHandler(unittest.TestCase):
+    def setUp(self):
+        # Setup mock data and configurations
+        self.secret_arn = 'arn:aws:secretsmanager:us-east-1:123456789012:secret:test-secret'
+        self.request_token = 'test-request-token'
+        self.test_password = 'new-test-password'
 
-# Import from the specific path in your project structure
-from fiportal_secret_rotation_lambda.lambda_function import lambda_handler
+    @patch('boto3.client')
+    def test_lambda_handler_rotation_not_enabled(self, mock_boto3_client):
+        # Test scenario where rotation is not enabled for the secret
+        mock_secrets_client = MagicMock()
+        mock_boto3_client.return_value = mock_secrets_client
 
-@mock_aws
-def test_create_secret():
-    # Create Secrets Manager client
-    secretsmanager_client = boto3.client('secretsmanager')
-    
-    # Create a test secret
-    secret_arn = secretsmanager_client.create_secret(
-        Name='test-fiportal-secret',
-        SecretString='{"username": "testuser", "password": "oldpassword"}'
-    )['ARN']
-    
-    # Prepare test event for createSecret step
-    event = {
-        'Step': 'createSecret',
-        'SecretId': secret_arn,
-        'ClientRequestToken': 'test-token-create'
-    }
-    context = {}
+        # Configure mock to return rotation not enabled
+        mock_secrets_client.describe_secret.return_value = {
+            'RotationEnabled': False
+        }
 
-    # Call lambda handler
-    lambda_handler(event, context)
+        event = {
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': self.request_token,
+            'Step': 'createSecret'
+        }
 
-    # Verify AWSPENDING version was created
-    secret_versions = secretsmanager_client.describe_secret(SecretId=secret_arn)['VersionIdsToStages']
-    assert 'test-token-create' in secret_versions
-    assert 'AWSPENDING' in secret_versions['test-token-create']
+        with self.assertRaises(ValueError) as context:
+            your_module.lambda_handler(event, None)
 
-@mock_aws
-def test_finish_secret():
-    # Create Secrets Manager client
-    secretsmanager_client = boto3.client('secretsmanager')
-    
-    # Create a test secret
-    secret_arn = secretsmanager_client.create_secret(
-        Name='test-fiportal-secret',
-        SecretString='{"username": "testuser", "password": "oldpassword"}'
-    )['ARN']
-    
-    # First, create a pending secret
-    create_event = {
-        'Step': 'createSecret',
-        'SecretId': secret_arn,
-        'ClientRequestToken': 'test-token-finish'
-    }
-    lambda_handler(create_event, {})
+        self.assertTrue('not enabled for rotation' in str(context.exception))
 
-    # Now finish the secret rotation
-    finish_event = {
-        'Step': 'finishSecret',
-        'SecretId': secret_arn,
-        'ClientRequestToken': 'test-token-finish'
-    }
-    lambda_handler(finish_event, {})
+    @patch('boto3.client')
+    def test_lambda_handler_create_secret_success(self, mock_boto3_client):
+        # Test successful secret creation step
+        mock_secrets_client = MagicMock()
+        mock_boto3_client.return_value = mock_secrets_client
 
-    # Verify version stages
-    secret_versions = secretsmanager_client.describe_secret(SecretId=secret_arn)['VersionIdsToStages']
-    assert 'test-token-finish' in secret_versions
-    assert 'AWSCURRENT' in secret_versions['test-token-finish']
+        # Configure mocks for successful secret creation
+        mock_secrets_client.describe_secret.return_value = {
+            'RotationEnabled': True,
+            'VersionIdsToStages': {self.request_token: ['AWSPENDING']}
+        }
+        mock_secrets_client.get_secret_value.side_effect = [
+            {'SecretString': json.dumps({'username': 'testuser', 'password': 'oldpassword'})},
+            boto3.exceptions.botocore.exceptions.ClientError({'Error': {'Code': 'ResourceNotFoundException'}}, 'get_secret_value')
+        ]
+        mock_secrets_client.get_random_password.return_value = {
+            'RandomPassword': self.test_password
+        }
 
-@mock_aws
-def test_update_secret():
-    # Create Secrets Manager client
-    secretsmanager_client = boto3.client('secretsmanager')
-    
-    # Create a test secret
-    secret_arn = secretsmanager_client.create_secret(
-        Name='test-fiportal-secret',
-        SecretString='{"username": "testuser", "password": "oldpassword"}'
-    )['ARN']
-    
-    # Prepare test data
-    new_password = 'newpassword123!'
+        event = {
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': self.request_token,
+            'Step': 'createSecret',
+            'Password': self.test_password
+        }
 
-    # Create event for update secret
-    event = {
-        'Step': 'updateSecret',
-        'SecretId': secret_arn,
-        'Password': new_password,
-        'ClientRequestToken': 'test-token-update'
-    }
-    context = {}
+        # Call the lambda handler
+        result = your_module.lambda_handler(event, None)
+        self.assertIsNone(result)  # Successful operations typically return None
 
-    # Call lambda handler
-    lambda_handler(event, context)
+        # Verify client method calls
+        mock_secrets_client.put_secret_value.assert_called_once()
 
-    # Retrieve updated secret
-    updated_secret = secretsmanager_client.get_secret_value(
-        SecretId=secret_arn,
-        VersionStage='AWSCURRENT'
-    )
-    updated_secret_data = updated_secret['SecretString']
-    assert new_password in updated_secret_data
+    @patch('boto3.client')
+    def test_lambda_handler_update_secret_success(self, mock_boto3_client):
+        # Test successful secret update step
+        mock_secrets_client = MagicMock()
+        mock_boto3_client.return_value = mock_secrets_client
 
-@mock_aws
-def test_invalid_step():
-    # Create Secrets Manager client
-    secretsmanager_client = boto3.client('secretsmanager')
-    
-    # Create a test secret
-    secret_arn = secretsmanager_client.create_secret(
-        Name='test-fiportal-secret',
-        SecretString='{"username": "testuser", "password": "oldpassword"}'
-    )['ARN']
-    
-    # Prepare event with invalid step
-    event = {
-        'Step': 'invalidStep',
-        'SecretId': secret_arn,
-        'ClientRequestToken': 'test-token-invalid'
-    }
-    context = {}
+        # Configure mocks for successful secret update
+        mock_secrets_client.get_secret_value.return_value = {
+            'SecretString': json.dumps({'username': 'testuser', 'password': 'oldpassword'})
+        }
 
-    # Expect ValueError for invalid step
-    with pytest.raises(ValueError, match='Invalid request step parameter'):
-        lambda_handler(event, context)
+        event = {
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': self.request_token,
+            'Step': 'updateSecret',
+            'Password': self.test_password
+        }
+
+        # Call the lambda handler
+        result = your_module.lambda_handler(event, None)
+        self.assertIsNone(result)  # Successful operations typically return None
+
+        # Verify client method calls
+        mock_secrets_client.put_secret_value.assert_called_once()
+
+    @patch('boto3.client')
+    def test_lambda_handler_finish_secret_success(self, mock_boto3_client):
+        # Test successful secret finalization step
+        mock_secrets_client = MagicMock()
+        mock_boto3_client.return_value = mock_secrets_client
+
+        # Configure mocks for successful secret finalization
+        mock_secrets_client.describe_secret.return_value = {
+            'VersionIdsToStages': {
+                'old-version': ['AWSCURRENT'],
+                self.request_token: ['AWSPENDING']
+            }
+        }
+
+        event = {
+            'SecretId': self.secret_arn,
+            'ClientRequestToken': self.request_token,
+            'Step': 'finishSecret'
+        }
+
+        # Call the lambda handler
+        result = your_module.lambda_handler(event, None)
+        self.assertIsNone(result)  # Successful operations typically return None
+
+        # Verify client method calls
+        mock_secrets_client.update_secret_version_stage.assert_called_once()
+
+    def test_execute_step_invalid_step(self):
+        # Test handling of invalid step
+        mock_client = MagicMock()
+
+        with self.assertRaises(ValueError) as context:
+            your_module.execute_step('invalidStep', mock_client, self.secret_arn, self.request_token, self.test_password)
+
+        self.assertTrue('Invalid request step parameter' in str(context.exception))
+
+    @patch('base64.b64encode')
+    def test_create_secret_binary_handling(self, mock_base64_encode):
+        # Test handling of binary secrets
+        mock_client = MagicMock()
+        mock_base64_encode.return_value = b'encoded-password'
+
+        mock_client.get_secret_value.return_value = {
+            'SecretBinary': b'current-binary-secret'
+        }
+        mock_client.get_random_password.return_value = {
+            'RandomPassword': self.test_password
+        }
+
+        try:
+            your_module.create_secret(mock_client, self.secret_arn, self.request_token)
+            mock_client.put_secret_value.assert_called_once()
+        except Exception as e:
+            self.fail(f"create_secret raised an unexpected exception: {e}")
+
+    def test_update_secret_json_parsing(self):
+        # Test updating secrets with complex JSON structures
+        mock_client = MagicMock()
+        complex_secret = {
+            'username': 'testuser',
+            'credentials': {
+                'password': 'oldpassword',
+                'salt': 'oldsalt'
+            }
+        }
+
+        mock_client.get_secret_value.return_value = {
+            'SecretString': json.dumps(complex_secret)
+        }
+
+        try:
+            your_module.update_secret(mock_client, self.secret_arn, self.test_password)
+            mock_client.put_secret_value.assert_called_once()
+            
+            # Verify the updated secret
+            updated_secret = json.loads(mock_client.put_secret_value.call_args[1]['SecretString'])
+            self.assertEqual(updated_secret['credentials']['password'], self.test_password)
+        except Exception as e:
+            self.fail(f"update_secret raised an unexpected exception: {e}")
+
+if __name__ == '__main__':
+    unittest.main()
