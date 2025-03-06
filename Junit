@@ -1,95 +1,28 @@
-import browser_cookie3
+import pandas as pd
 import json
-import os
-from urllib.parse import urlparse
 
-def extract_chrome_cookies(url):
-    # Parse the domain from the URL
-    domain = urlparse(url).netloc
-    if not domain.startswith('.'):
-        domain = '.' + domain
-    
-    print(f"Extracting cookies for domain: {domain}")
-    
-    # Extract cookies from Chrome
-    try:
-        chrome_cookies = browser_cookie3.chrome()
-        
-        # Filter cookies for the specified domain
-        domain_cookies = []
-        for cookie in chrome_cookies:
-            if domain in cookie.domain:
-                cookie_dict = {
-                    'name': cookie.name,
-                    'value': cookie.value,
-                    'domain': cookie.domain,
-                    'path': cookie.path,
-                    'secure': cookie.secure,
-                    'httpOnly': cookie.has_nonstandard_attr('httpOnly'),
-                }
-                
-                # Add expiry if available
-                if cookie.expires is not None:
-                    cookie_dict['expiry'] = int(cookie.expires)
-                
-                domain_cookies.append(cookie_dict)
-        
-        # Save cookies to a file
-        output_file = 'selenium_cookies.json'
-        with open(output_file, 'w') as f:
-            json.dump(domain_cookies, f, indent=2)
-        
-        print(f"Successfully extracted {len(domain_cookies)} cookies to {output_file}")
-        return output_file
-    
-    except Exception as e:
-        print(f"Error extracting cookies: {e}")
-        return None
+# Read the Excel file
+df = pd.read_excel('cookies.xlsx', sheet_name='Sheet1')  # Adjust filename and sheet name
 
-def use_cookies_in_selenium(url, cookie_file):
-    from selenium import webdriver
-    from selenium.webdriver.chrome.options import Options
-    
-    # Set up Chrome options
-    chrome_options = Options()
-    # Uncomment if you want to run in headless mode
-    # chrome_options.add_argument("--headless")
-    
-    # Create the driver
-    driver = webdriver.Chrome(options=chrome_options)
-    
-    # Navigate to the site first (required to set cookies)
-    driver.get(url)
-    
-    # Load and apply cookies
-    with open(cookie_file, 'r') as file:
-        cookies = json.load(file)
-        for cookie in cookies:
-            try:
-                driver.add_cookie(cookie)
-            except Exception as e:
-                print(f"Error adding cookie {cookie['name']}: {e}")
-    
-    # Refresh the page to apply cookies
-    driver.refresh()
-    
-    print("Cookies applied successfully. You should now be logged in.")
-    return driver
+# Convert DataFrame to list of dictionaries
+cookies = df.to_dict(orient='records')
 
-if __name__ == "__main__":
-    # Replace with your target URL
-    target_url = "https://example.com"
+# Convert boolean fields (if they're stored as strings)
+for cookie in cookies:
+    if 'secure' in cookie and isinstance(cookie['secure'], str):
+        cookie['secure'] = cookie['secure'].lower() == 'true'
     
-    # Extract cookies
-    cookie_file = extract_chrome_cookies(target_url)
+    # Convert expiry to integer if present
+    if 'expiry' in cookie and cookie['expiry'] and not pd.isna(cookie['expiry']):
+        cookie['expiry'] = int(cookie['expiry'])
     
-    if cookie_file:
-        # Use cookies in Selenium
-        driver = use_cookies_in_selenium(target_url, cookie_file)
-        
-        # Your automation code here
-        # ...
-        
-        # Wait for user input before closing
-        input("Press Enter to close the browser...")
-        driver.quit()
+    # Remove NaN values
+    for key in list(cookie.keys()):
+        if isinstance(cookie[key], float) and pd.isna(cookie[key]):
+            del cookie[key]
+
+# Save to JSON file
+with open('selenium_cookies.json', 'w') as f:
+    json.dump(cookies, f, indent=2)
+
+print("Cookies saved to selenium_cookies.json")
