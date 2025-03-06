@@ -1,28 +1,26 @@
-from dummy import dummy
+from selenium import webdriver
+import json
+import os
 
-class TestDummy(unittest.TestCase):
-    def test_dummy_exists(self):
-        """
-        Test that the dummy function can be called without raising an exception.
-        """
-        try:
-            dummy()
-        except Exception as e:
-            self.fail(f"dummy() raised {type(e).__name__} unexpectedly!")
-    
-    def test_dummy_returns_none(self):
-        """
-        Test that the dummy function returns None when called.
-        """
-        result = dummy()
-        self.assertIsNone(result)
-    
-    def test_dummy_can_be_called_multiple_times(self):
-        """
-        Test that the dummy function can be called multiple times.
-        """
-        for _ in range(5):
-            try:
-                dummy()
-            except Exception as e:
-                self.fail(f"dummy() raised {type(e).__name__} on iteration!")
+def load_cookies_from_file(driver, cookie_file):
+    with open(cookie_file, 'r') as file:
+        cookies = json.load(file)
+        for cookie in cookies:
+            # Some cookies might have an expiry key that needs to be an int
+            if 'expiry' in cookie:
+                cookie['expiry'] = int(cookie['expiry'])
+            driver.add_cookie(cookie)
+
+# Chrome cookie file location (for manual export from Chrome DevTools)
+# You need to export cookies from Chrome DevTools first
+cookie_file = "cookies.json"  
+
+# Create driver and navigate to site
+driver = webdriver.Chrome()
+driver.get("https://example.com")  # Must be on the site's domain before adding cookies
+
+# Load cookies
+load_cookies_from_file(driver, cookie_file)
+
+# Refresh page to apply cookies
+driver.refresh()
