@@ -1,272 +1,190 @@
 import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.tree import DecisionTreeRegressor
-import sympy as sp
-import itertools
+from sklearn.model_selection import train_test_split
 
-class RuleDiscoverer:
+class RuleValidator:
     """
-    Discovers transformation rules between input and output columns,
-    considering categorical dependencies.
+    Validates discovered transformation rules by applying them to test data
+    and comparing the results with actual output values.
     """
     
-    def __init__(self, categorical_handler):
+    def validate_rules(self, all_rules, input_df, output_df, categorical_handler, test_size=0.2, random_state=42):
         """
-        Initialize the RuleDiscoverer.
+        Validate discovered rules on test data.
         
         Args:
+            all_rules (dict): Dictionary of discovered rules by output column and segment
+            input_df (pd.DataFrame): Input dataset
+            output_df (pd.DataFrame): Output dataset
             categorical_handler (CategoricalHandler): Handler for categorical data
-        """
-        self.categorical_handler = categorical_handler
-        self.operations = [
-            self._addition, 
-            self._subtraction,
-            self._multiplication,
-            self._division,
-            self._squared,
-            self._square_root,
-            self._log,
-            self._exp
-        ]
-        self.binary_operations = [
-            self._addition, 
-            self._subtraction,
-            self._multiplication,
-            self._division
-        ]
-        
-    def discover_rules(self, input_df, output_df):
-        """
-        Discover transformation rules that map input columns to output columns.
-        
-        Args:
-            input_df (pd.DataFrame): Input dataset segment
-            output_df (pd.DataFrame): Corresponding output dataset segment
+            test_size (float): Proportion of data to use for testing
+            random_state (int): Random seed for reproducibility
             
         Returns:
-            dict: Dictionary of rules for each output column
+            float: Overall validation accuracy
         """
-        rules = {}
+        # Split data into train and test sets
+        input_train, input_test, output_train, output_test = train_test_split(
+            input_df, output_df, test_size=test_size, random_state=random_state
+        )
         
-        # Remove categorical columns for rule discovery
-        numeric_input_df = input_df.drop(columns=self.categorical_handler.categorical_cols, errors='ignore')
-        input_cols = numeric_input_df.columns
+        # Apply rules to test data
+        predicted_output = self._apply_rules(all_rules, input_test, categorical_handler)
         
-        for output_col in output_df.columns:
-            output_values = output_df[output_col].values
-            
-            # Try direct mapping (one-to-one)
-            direct_rule = self._discover_direct_mapping(numeric_input_df, output_values)
-            if direct_rule:
-                rules[output_col] = direct_rule
-                continue
+        # Calculate accuracy per output column
+        column_accuracies = {}
+        for col in output_test.columns:
+            if col in predicted_output.columns:
+                # Calculate normalized RMSE
+                rmse = np.sqrt(np.mean((predicted_output[col] - output_test[col]) ** 2))
                 
-            # Try simple transformations on single columns
-            simple_rule = self._discover_simple_transformations(numeric_input_df, output_values)
-            if simple_rule:
-                rules[output_col] = simple_rule
-                continue
-                
-            # Try combinations of columns (for M > N case)
-            combined_rule = self._discover_column_combinations(numeric_input_df, output_values)
-            if combined_rule:
-                rules[output_col] = combined_rule
-                continue
-                
-            # Fallback to ML models for complex relationships
-            ml_rule = self._discover_complex_relationships(numeric_input_df, output_values)
-            if ml_rule:
-                rules[output_col] = ml_rule
-                continue
-                
-            # If no clear rule found
-            rules[output_col] = "Unknown transformation"
-        
-        return rules
-    
-    def _discover_direct_mapping(self, input_df, output_values):
-        """Check if any input column directly maps to the output"""
-        for col in input_df.columns:
-            input_values = input_df[col].values
-            
-            # Check exact match
-            if np.array_equal(input_values, output_values):
-                return f"{col}"
-            
-            # Check constant factor
-            if len(input_values) > 0 and all(input_values > 0) and all(output_values > 0):
-                ratios = output_values / input_values
-                if np.allclose(ratios, ratios[0], rtol=1e-2):
-                    factor = round(float(ratios[0]), 3)
-                    return f"{factor} * {col}"
-                    
-            # Check constant addition
-            diffs = output_values - input_values
-            if np.allclose(diffs, diffs[0], rtol=1e-2):
-                constant = round(float(diffs[0]), 3)
-                if constant > 0:
-                    return f"{col} + {constant}"
+                # Normalize by the range of the output
+                output_range = output_test[col].max() - output_test[col].min()
+                if output_range > 0:
+                    normalized_rmse = rmse / output_range
+                    accuracy = max(0, 1 - normalized_rmse)
                 else:
-                    return f"{col} - {abs(constant)}"
-        
-        return None
-    
-    def _discover_simple_transformations(self, input_df, output_values):
-        """Check if the output is a simple transformation of an input column"""
-        best_rule = None
-        lowest_error = float('inf')
-        
-        for col in input_df.columns:
-            input_values = input_df[col].values
-            
-            for operation in self.operations:
-                try:
-                    transformed = operation(input_values)
-                    error = np.mean((transformed - output_values) ** 2)
-                    
-                    if error < 0.01 and error < lowest_error:
-                        op_name = operation.__name__.replace('_', ' ')
-                        if op_name == "addition":
-                            rule = f"{col} + constant"
-                        elif op_name == "subtraction":
-                            rule = f"{col} - constant"
-                        elif op_name == "multiplication":
-                            rule = f"{col} * constant"
-                        elif op_name == "division":
-                            rule = f"{col} / constant"
-                        elif op_name == "squared":
-                            rule = f"{col}^2"
-                        elif op_name == "square root":
-                            rule = f"sqrt({col})"
-                        elif op_name == "log":
-                            rule = f"log({col})"
-                        elif op_name == "exp":
-                            rule = f"exp({col})"
-                        
-                        lowest_error = error
-                        best_rule = rule
-                except:
-                    continue
-        
-        return best_rule
-    
-    def _discover_column_combinations(self, input_df, output_values):
-        """Check if the output is a combination of input columns"""
-        if len(input_df.columns) < 2:
-            return None
-            
-        best_rule = None
-        lowest_error = float('inf')
-        
-        # Try combinations of two columns
-        for col1, col2 in itertools.combinations(input_df.columns, 2):
-            values1 = input_df[col1].values
-            values2 = input_df[col2].values
-            
-            for operation in self.binary_operations:
-                try:
-                    transformed = operation(values1, values2)
-                    error = np.mean((transformed - output_values) ** 2)
-                    
-                    if error < 0.01 and error < lowest_error:
-                        op_name = operation.__name__.replace('_', ' ')
-                        if op_name == "addition":
-                            rule = f"{col1} + {col2}"
-                        elif op_name == "subtraction":
-                            rule = f"{col1} - {col2}"
-                        elif op_name == "multiplication":
-                            rule = f"{col1} * {col2}"
-                        elif op_name == "division":
-                            rule = f"{col1} / {col2}"
-                        
-                        lowest_error = error
-                        best_rule = rule
-                except:
-                    continue
-        
-        return best_rule
-    
-    def _discover_complex_relationships(self, input_df, output_values):
-        """Discover complex relationships using ML models"""
-        if len(input_df) < 5:  # Need sufficient data for ML
-            return None
-            
-        # Try linear regression for linear relationships
-        try:
-            model = LinearRegression()
-            model.fit(input_df, output_values)
-            
-            # Get coefficient terms
-            terms = []
-            for i, col in enumerate(input_df.columns):
-                coef = model.coef_[i]
-                if abs(coef) > 1e-5:  # Ignore near-zero coefficients
-                    coef_rounded = round(float(coef), 3)
-                    if coef_rounded == 1:
-                        terms.append(f"{col}")
-                    else:
-                        terms.append(f"{coef_rounded} * {col}")
-            
-            # Add intercept if significant
-            if abs(model.intercept_) > 1e-5:
-                intercept_rounded = round(float(model.intercept_), 3)
-                if intercept_rounded > 0:
-                    terms.append(str(intercept_rounded))
-                else:
-                    terms.append(f"- {abs(intercept_rounded)}")
-                    
-            if terms:
-                rule = " + ".join(terms).replace("+ -", "- ")
+                    # If range is 0, check if predictions match exactly
+                    accuracy = float(np.array_equal(predicted_output[col], output_test[col]))
                 
-                # Check if the linear model is accurate
-                predictions = model.predict(input_df)
-                error = np.mean((predictions - output_values) ** 2)
-                
-                if error < 0.01:
-                    return rule
-        except:
-            pass
+                column_accuracies[col] = accuracy
+        
+        # Calculate overall accuracy
+        if column_accuracies:
+            overall_accuracy = sum(column_accuracies.values()) / len(column_accuracies)
+        else:
+            overall_accuracy = 0.0
             
-        # If linear model isn't accurate, try decision tree
+        # Print detailed accuracy report
+        print("\nValidation Results:")
+        print(f"{'Column':<15} {'Accuracy':<10}")
+        print("-" * 25)
+        for col, acc in column_accuracies.items():
+            print(f"{col:<15} {acc:.4f}")
+            
+        return overall_accuracy
+    
+    def _apply_rules(self, all_rules, input_df, categorical_handler):
+        """
+        Apply discovered rules to input data to predict outputs.
+        
+        Args:
+            all_rules (dict): Dictionary of discovered rules by output column and segment
+            input_df (pd.DataFrame): Input dataset
+            categorical_handler (CategoricalHandler): Handler for categorical data
+            
+        Returns:
+            pd.DataFrame: Predicted output dataset
+        """
+        # Initialize empty DataFrame for predictions
+        predicted_output = pd.DataFrame(index=input_df.index)
+        
+        # Segment the input data
+        segments = categorical_handler.segment_data(input_df)
+        
+        # Apply rules to each segment
+        for output_col, rules_by_segment in all_rules.items():
+            # Initialize column with NaN values
+            predicted_output[output_col] = np.nan
+            
+            # Apply segment-specific rules
+            for segment_name, rule in rules_by_segment.items():
+                if segment_name in segments:
+                    segment_df = segments[segment_name]
+                    segment_indices = segment_df.index
+                    
+                    try:
+                        predicted_values = self._evaluate_rule(rule, segment_df)
+                        predicted_output.loc[segment_indices, output_col] = predicted_values
+                    except Exception as e:
+                        print(f"Error applying rule '{rule}' for {output_col} in segment {segment_name}: {e}")
+        
+        return predicted_output
+    
+    def _evaluate_rule(self, rule, input_df):
+        """
+        Evaluate a rule string on the input data.
+        
+        Args:
+            rule (str): Rule string to evaluate
+            input_df (pd.DataFrame): Input dataframe
+            
+        Returns:
+            np.ndarray: Predicted values
+        """
+        # Handle different rule types
+        if "Unknown transformation" in rule:
+            # Return NaN for unknown rules
+            return np.full(len(input_df), np.nan)
+            
+        if "Decision tree" in rule:
+            # For decision tree rules, we can't directly evaluate
+            # In a real implementation, you would store the trained model
+            return np.full(len(input_df), np.nan)
+        
+        # For simple arithmetic rules
         try:
-            model = DecisionTreeRegressor(max_depth=3)
-            model.fit(input_df, output_values)
+            # Replace column names with actual values
+            numeric_input_df = input_df.copy()
+            if isinstance(numeric_input_df, pd.Series):
+                numeric_input_df = pd.DataFrame(numeric_input_df)
             
-            # For decision tree, return a descriptive rule
-            return f"Decision tree based on {', '.join(input_df.columns)}"
-        except:
-            return None
+            # Create a dictionary mapping column names to their values
+            columns_dict = {}
+            for col in numeric_input_df.columns:
+                if col in rule:
+                    columns_dict[col] = numeric_input_df[col].values
+            
+            # Simple parsing and evaluation for basic arithmetic
+            # This is a simplified implementation - a real one would use a proper expression parser
+            result = self._simple_rule_evaluation(rule, columns_dict)
+            return result
+            
+        except Exception as e:
+            print(f"Error evaluating rule '{rule}': {e}")
+            return np.full(len(input_df), np.nan)
     
-    # Helper operations
-    def _addition(self, a, b=None):
-        if b is not None:
-            return a + b
-        return a  # Placeholder for unary version
-    
-    def _subtraction(self, a, b=None):
-        if b is not None:
-            return a - b
-        return -a
-    
-    def _multiplication(self, a, b=None):
-        if b is not None:
-            return a * b
-        return a
-    
-    def _division(self, a, b=None):
-        if b is not None:
-            return np.divide(a, b, out=np.zeros_like(a), where=b!=0)
-        return np.divide(1, a, out=np.zeros_like(a), where=a!=0)
-    
-    def _squared(self, a):
-        return a * a
-    
-    def _square_root(self, a):
-        return np.sqrt(np.abs(a))  # Using abs to avoid complex numbers
-    
-    def _log(self, a):
-        return np.log(np.abs(a) + 1e-10)  # Adding small constant to avoid log(0)
-    
-    def _exp(self, a):
-        return np.exp(a)
+    def _simple_rule_evaluation(self, rule, columns_dict):
+        """
+        Simple evaluation of arithmetic rules.
+        
+        Args:
+            rule (str): Rule string to evaluate
+            columns_dict (dict): Dictionary mapping column names to their values
+            
+        Returns:
+            np.ndarray: Result of rule evaluation
+        """
+        # This is a simplified implementation - in practice, you'd use a proper expression parser
+        # Handle some common cases
+        
+        # Direct column reference
+        if rule in columns_dict:
+            return columns_dict[rule]
+        
+        # Constant multiplication: "2 * col"
+        if '*' in rule and len(rule.split('*')) == 2:
+            parts = rule.split('*')
+            factor_part = parts[0].strip()
+            col_part = parts[1].strip()
+            
+            if col_part in columns_dict:
+                try:
+                    factor = float(factor_part)
+                    return factor * columns_dict[col_part]
+                except:
+                    pass
+            
+            if factor_part in columns_dict:
+                try:
+                    factor = float(col_part)
+                    return factor * columns_dict[factor_part]
+                except:
+                    pass
+                    
+            if factor_part in columns_dict and col_part in columns_dict:
+                return columns_dict[factor_part] * columns_dict[col_part]
+        
+        # Addition: "col1 + col2" or "col + constant"
+        if '+' in rule and len(rule.split('+')) == 2:
+            parts = rule.
