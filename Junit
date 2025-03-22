@@ -1,4 +1,5 @@
-We have an input dataset with N columns and an output dataset with M columns, where M may be greater than, equal to, or less than N. Each output column is derived from one or more input columns using unknown transformation rules, which may vary based on categorical features.
+We have an input dataset with N columns and an output dataset with M columns, where M may be greater than, equal to, or less than N. Each output column is derived from one or 
+more input columns using unknown transformation rules, which may vary based on categorical features.
 
 Key Challenges & Considerations
 ✅ M vs. N Relationship
@@ -23,7 +24,6 @@ The same input row may produce different output values depending on external con
 
 Example:
 
-Edit
 input_col1 = 50, category = "A"  → output_col1 = 100
 input_col1 = 50, category = "B"  → output_col1 = 60
 This means rule discovery needs to segment data by categorical attributes.
