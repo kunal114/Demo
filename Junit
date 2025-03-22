@@ -1,28 +1,38 @@
-import pandas as pd
-import json
+We have an input dataset with N columns and an output dataset with M columns, where M may be greater than, equal to, or less than N. Each output column is derived from one or more input columns using unknown transformation rules, which may vary based on categorical features.
 
-# Read the Excel file
-df = pd.read_excel('cookies.xlsx', sheet_name='Sheet1')  # Adjust filename and sheet name
+Key Challenges & Considerations
+✅ M vs. N Relationship
 
-# Convert DataFrame to list of dictionaries
-cookies = df.to_dict(orient='records')
+If M > N, then new output columns are derived through feature generation (e.g., output_col3 = input_col1 + input_col2).
 
-# Convert boolean fields (if they're stored as strings)
-for cookie in cookies:
-    if 'secure' in cookie and isinstance(cookie['secure'], str):
-        cookie['secure'] = cookie['secure'].lower() == 'true'
-    
-    # Convert expiry to integer if present
-    if 'expiry' in cookie and cookie['expiry'] and not pd.isna(cookie['expiry']):
-        cookie['expiry'] = int(cookie['expiry'])
-    
-    # Remove NaN values
-    for key in list(cookie.keys()):
-        if isinstance(cookie[key], float) and pd.isna(cookie[key]):
-            del cookie[key]
+If M < N, then multiple input columns contribute to fewer output features, possibly via aggregation or selection (e.g., output_col1 = max(input_col1, input_col2)).
 
-# Save to JSON file
-with open('selenium_cookies.json', 'w') as f:
-    json.dump(cookies, f, indent=2)
+✅ Handling Categorical Dependencies
 
-print("Cookies saved to selenium_cookies.json")
+The transformation rule for an output column may change depending on a categorical feature.
+
+Example:
+
+If category = "A", output_col1 = input_col1 * 2
+If category = "B", output_col1 = input_col2 + 10
+This requires conditional rule extraction rather than just mathematical transformations.
+
+✅ Different Values for the Same Output Column
+
+The same input row may produce different output values depending on external conditions.
+
+Example:
+
+Edit
+input_col1 = 50, category = "A"  → output_col1 = 100
+input_col1 = 50, category = "B"  → output_col1 = 60
+This means rule discovery needs to segment data by categorical attributes.
+
+Objective
+Automatically derive transformation rules that map input columns (N) to output columns (M).
+
+Detect conditional logic where an output column's rule varies based on a categorical input.
+
+Support feature engineering cases where extra columns are generated (M > N) or reduced (M < N).
+
+Validate rules by applying them to unseen data and ensuring accuracy.
