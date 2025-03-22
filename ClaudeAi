@@ -1,190 +1,97 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
 
-class RuleValidator:
+class CategoricalHandler:
     """
-    Validates discovered transformation rules by applying them to test data
-    and comparing the results with actual output values.
+    Handles the segmentation of data based on categorical features and 
+    manages conditional logic discovery.
     """
     
-    def validate_rules(self, all_rules, input_df, output_df, categorical_handler, test_size=0.2, random_state=42):
+    def __init__(self, categorical_cols=None):
         """
-        Validate discovered rules on test data.
+        Initialize the CategoricalHandler.
         
         Args:
-            all_rules (dict): Dictionary of discovered rules by output column and segment
-            input_df (pd.DataFrame): Input dataset
-            output_df (pd.DataFrame): Output dataset
-            categorical_handler (CategoricalHandler): Handler for categorical data
-            test_size (float): Proportion of data to use for testing
-            random_state (int): Random seed for reproducibility
+            categorical_cols (list): List of column names that are categorical
+        """
+        self.categorical_cols = categorical_cols or []
+        
+    def segment_data(self, input_df):
+        """
+        Segment the input data based on combinations of categorical features.
+        
+        Args:
+            input_df (pd.DataFrame): The input dataset
             
         Returns:
-            float: Overall validation accuracy
+            dict: Dictionary of segmented DataFrames with segment names as keys
         """
-        # Split data into train and test sets
-        input_train, input_test, output_train, output_test = train_test_split(
-            input_df, output_df, test_size=test_size, random_state=random_state
-        )
+        if not self.categorical_cols:
+            return {'all_data': input_df.copy()}
         
-        # Apply rules to test data
-        predicted_output = self._apply_rules(all_rules, input_test, categorical_handler)
+        segments = {}
         
-        # Calculate accuracy per output column
-        column_accuracies = {}
-        for col in output_test.columns:
-            if col in predicted_output.columns:
-                # Calculate normalized RMSE
-                rmse = np.sqrt(np.mean((predicted_output[col] - output_test[col]) ** 2))
-                
-                # Normalize by the range of the output
-                output_range = output_test[col].max() - output_test[col].min()
-                if output_range > 0:
-                    normalized_rmse = rmse / output_range
-                    accuracy = max(0, 1 - normalized_rmse)
-                else:
-                    # If range is 0, check if predictions match exactly
-                    accuracy = float(np.array_equal(predicted_output[col], output_test[col]))
-                
-                column_accuracies[col] = accuracy
-        
-        # Calculate overall accuracy
-        if column_accuracies:
-            overall_accuracy = sum(column_accuracies.values()) / len(column_accuracies)
+        # Create a unique segment ID for each unique combination of categorical values
+        if len(self.categorical_cols) == 1:
+            # Single categorical column case
+            cat_col = self.categorical_cols[0]
+            unique_values = input_df[cat_col].unique()
+            
+            for value in unique_values:
+                segment_name = f"{cat_col}='{value}'"
+                segment_df = input_df[input_df[cat_col] == value].copy()
+                segments[segment_name] = segment_df
         else:
-            overall_accuracy = 0.0
+            # Multiple categorical columns case
+            # Create a cartesian product of all possible combinations
+            combined_categories = input_df[self.categorical_cols].drop_duplicates()
             
-        # Print detailed accuracy report
-        print("\nValidation Results:")
-        print(f"{'Column':<15} {'Accuracy':<10}")
-        print("-" * 25)
-        for col, acc in column_accuracies.items():
-            print(f"{col:<15} {acc:.4f}")
-            
-        return overall_accuracy
+            for _, row in combined_categories.iterrows():
+                segment_conditions = ' AND '.join([f"{col}='{row[col]}'" for col in self.categorical_cols])
+                
+                # Create mask for this combination
+                mask = True
+                for col in self.categorical_cols:
+                    mask = mask & (input_df[col] == row[col])
+                
+                segment_df = input_df[mask].copy()
+                segments[segment_conditions] = segment_df
+        
+        return segments
     
-    def _apply_rules(self, all_rules, input_df, categorical_handler):
+    def get_corresponding_output(self, output_df, segment_df):
         """
-        Apply discovered rules to input data to predict outputs.
+        Get the corresponding output data for a given input segment.
         
         Args:
-            all_rules (dict): Dictionary of discovered rules by output column and segment
-            input_df (pd.DataFrame): Input dataset
-            categorical_handler (CategoricalHandler): Handler for categorical data
+            output_df (pd.DataFrame): The full output dataset
+            segment_df (pd.DataFrame): A segment of the input dataset
             
         Returns:
-            pd.DataFrame: Predicted output dataset
+            pd.DataFrame: The corresponding rows from the output dataset
         """
-        # Initialize empty DataFrame for predictions
-        predicted_output = pd.DataFrame(index=input_df.index)
-        
-        # Segment the input data
-        segments = categorical_handler.segment_data(input_df)
-        
-        # Apply rules to each segment
-        for output_col, rules_by_segment in all_rules.items():
-            # Initialize column with NaN values
-            predicted_output[output_col] = np.nan
-            
-            # Apply segment-specific rules
-            for segment_name, rule in rules_by_segment.items():
-                if segment_name in segments:
-                    segment_df = segments[segment_name]
-                    segment_indices = segment_df.index
-                    
-                    try:
-                        predicted_values = self._evaluate_rule(rule, segment_df)
-                        predicted_output.loc[segment_indices, output_col] = predicted_values
-                    except Exception as e:
-                        print(f"Error applying rule '{rule}' for {output_col} in segment {segment_name}: {e}")
-        
-        return predicted_output
+        # Assuming output_df has the same row ordering as input_df
+        # In real-world scenarios, you'd need a key to match rows
+        segment_indices = segment_df.index
+        return output_df.loc[segment_indices].copy()
     
-    def _evaluate_rule(self, rule, input_df):
+    def combine_segment_rules(self, rules_by_segment):
         """
-        Evaluate a rule string on the input data.
+        Combine segment-specific rules into conditional expressions.
         
         Args:
-            rule (str): Rule string to evaluate
-            input_df (pd.DataFrame): Input dataframe
+            rules_by_segment (dict): Dictionary of rules by segment
             
         Returns:
-            np.ndarray: Predicted values
+            str: A combined rule expression with conditional logic
         """
-        # Handle different rule types
-        if "Unknown transformation" in rule:
-            # Return NaN for unknown rules
-            return np.full(len(input_df), np.nan)
-            
-        if "Decision tree" in rule:
-            # For decision tree rules, we can't directly evaluate
-            # In a real implementation, you would store the trained model
-            return np.full(len(input_df), np.nan)
+        if len(rules_by_segment) == 1:
+            # If there's only one segment, return its rule
+            return next(iter(rules_by_segment.values()))
         
-        # For simple arithmetic rules
-        try:
-            # Replace column names with actual values
-            numeric_input_df = input_df.copy()
-            if isinstance(numeric_input_df, pd.Series):
-                numeric_input_df = pd.DataFrame(numeric_input_df)
-            
-            # Create a dictionary mapping column names to their values
-            columns_dict = {}
-            for col in numeric_input_df.columns:
-                if col in rule:
-                    columns_dict[col] = numeric_input_df[col].values
-            
-            # Simple parsing and evaluation for basic arithmetic
-            # This is a simplified implementation - a real one would use a proper expression parser
-            result = self._simple_rule_evaluation(rule, columns_dict)
-            return result
-            
-        except Exception as e:
-            print(f"Error evaluating rule '{rule}': {e}")
-            return np.full(len(input_df), np.nan)
-    
-    def _simple_rule_evaluation(self, rule, columns_dict):
-        """
-        Simple evaluation of arithmetic rules.
+        combined_rule = "CASE\n"
+        for segment, rule in rules_by_segment.items():
+            combined_rule += f"  WHEN {segment} THEN {rule}\n"
+        combined_rule += "END"
         
-        Args:
-            rule (str): Rule string to evaluate
-            columns_dict (dict): Dictionary mapping column names to their values
-            
-        Returns:
-            np.ndarray: Result of rule evaluation
-        """
-        # This is a simplified implementation - in practice, you'd use a proper expression parser
-        # Handle some common cases
-        
-        # Direct column reference
-        if rule in columns_dict:
-            return columns_dict[rule]
-        
-        # Constant multiplication: "2 * col"
-        if '*' in rule and len(rule.split('*')) == 2:
-            parts = rule.split('*')
-            factor_part = parts[0].strip()
-            col_part = parts[1].strip()
-            
-            if col_part in columns_dict:
-                try:
-                    factor = float(factor_part)
-                    return factor * columns_dict[col_part]
-                except:
-                    pass
-            
-            if factor_part in columns_dict:
-                try:
-                    factor = float(col_part)
-                    return factor * columns_dict[factor_part]
-                except:
-                    pass
-                    
-            if factor_part in columns_dict and col_part in columns_dict:
-                return columns_dict[factor_part] * columns_dict[col_part]
-        
-        # Addition: "col1 + col2" or "col + constant"
-        if '+' in rule and len(rule.split('+')) == 2:
-            parts = rule.
+        return combined_rule
