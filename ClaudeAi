@@ -293,3 +293,204 @@ class RuleValidator:
         
         # If we can't parse it, return NaN
         return np.full(len(next(iter(columns_dict.values()))), np.nan)
+
+
+
+
+
+
+
+import pandas as pd
+import numpy as np
+from dataset_generator import DatasetGenerator
+from rule_discoverer import RuleDiscoverer
+from rule_validator import RuleValidator
+from categorical_handler import CategoricalHandler
+from feature_engineering import FeatureEngineer
+import json
+
+def run_example():
+    """Run an example of the automatic rule discovery system"""
+    print("=== Automatic Rule Discovery System ===\n")
+    
+    # 1. Generate synthetic data with known rules
+    print("Generating synthetic data...")
+    generator = DatasetGenerator(n_samples=200, n_input_cols=4, n_output_cols=6, categorical_cols=1)
+    input_df, output_df, true_rules = generator.generate_datasets()
+    
+    print(f"Generated input dataset with {len(input_df.columns)} columns and {len(input_df)} rows")
+    print(f"Generated output dataset with {len(output_df.columns)} columns and {len(output_df)} rows")
+    
+    # Print sample data
+    print("\nSample input data:")
+    print(input_df.head(3))
+    print("\nSample output data:")
+    print(output_df.head(3))
+    
+    # Print true rules
+    generator.print_true_rules(true_rules)
+    
+    # 2. Discover rules
+    print("Starting rule discovery process...")
+    categorical_cols = [col for col in input_df.columns if col.startswith('category')]
+    
+    # Initialize components
+    categorical_handler = CategoricalHandler(categorical_cols)
+    feature_engineer = FeatureEngineer(input_df, output_df)
+    rule_discoverer = RuleDiscoverer(categorical_handler)
+    rule_validator = RuleValidator()
+    
+    # Check if we need feature engineering (M > N)
+    if len(output_df.columns) > len(input_df.columns):
+        print(f"M ({len(output_df.columns)}) > N ({len(input_df.columns)}): Performing feature generation...")
+        enhanced_input_df = feature_engineer.generate_candidate_features()
+    else:
+        enhanced_input_df = input_df.copy()
+    
+    # Segment data by categorical features
+    segments = categorical_handler.segment_data(enhanced_input_df)
+    print(f"Data segmented into {len(segments)} segments based on categorical features")
+    
+    # Discover rules per segment
+    all_rules = {}
+    for segment_name, segment_df in segments.items():
+        segment_output = categorical_handler.get_corresponding_output(output_df, segment_df)
+        
+        print(f"Discovering rules for segment: {segment_name}")
+        segment_rules = rule_discoverer.discover_rules(segment_df, segment_output)
+        
+        # Store discovered rules with segment information
+        for output_col, rule in segment_rules.items():
+            if output_col not in all_rules:
+                all_rules[output_col] = {}
+            all_rules[output_col][segment_name] = rule
+    
+    # 3. Validate rules
+    print("\nValidating discovered rules...")
+    validation_accuracy = rule_validator.validate_rules(all_rules, enhanced_input_df, output_df, categorical_handler)
+    
+    print(f"\nOverall rule validation accuracy: {validation_accuracy:.2f}")
+    
+    # 4. Compare discovered rules with true rules
+    print("\n=== DISCOVERED TRANSFORMATION RULES ===")
+    for output_col, rules_by_segment in all_rules.items():
+        print(f"\n{output_col}:")
+        if len(rules_by_segment) == 1:
+            # Single rule for all data
+            print(f"  {next(iter(rules_by_segment.values()))}")
+        else:
+            # Conditional rules
+            for segment, rule in rules_by_segment.items():
+                print(f"  When {segment}: {rule}")
+    print("======================================\n")
+    
+    # 5. Export discovered rules to JSON
+    with open('discovered_rules.json', 'w') as f:
+        # Convert numpy types to Python native types for JSON serialization
+        json_rules = {}
+        for output_col, rules_by_segment in all_rules.items():
+            json_rules[output_col] = {segment: rule for segment, rule in rules_by_segment.items()}
+        
+        json.dump(json_rules, f, indent=2)
+    
+    print("Rules exported to 'discovered_rules.json'")
+
+def run_real_data_example(input_file, output_file, categorical_cols=None):
+    """
+    Run the rule discovery system on real data from CSV files.
+    
+    Args:
+        input_file (str): Path to input CSV file
+        output_file (str): Path to output CSV file
+        categorical_cols (list): List of categorical columns in the input data
+    """
+    print("=== Automatic Rule Discovery on Real Data ===\n")
+    
+    # 1. Load data
+    print(f"Loading data from {input_file} and {output_file}...")
+    input_df = pd.read_csv(input_file)
+    output_df = pd.read_csv(output_file)
+    
+    print(f"Loaded input dataset with {len(input_df.columns)} columns and {len(input_df)} rows")
+    print(f"Loaded output dataset with {len(output_df.columns)} columns and {len(output_df)} rows")
+    
+    # Print sample data
+    print("\nSample input data:")
+    print(input_df.head(3))
+    print("\nSample output data:")
+    print(output_df.head(3))
+    
+    # 2. Discover rules
+    print("Starting rule discovery process...")
+    
+    # Initialize components
+    categorical_handler = CategoricalHandler(categorical_cols)
+    feature_engineer = FeatureEngineer(input_df, output_df)
+    rule_discoverer = RuleDiscoverer(categorical_handler)
+    rule_validator = RuleValidator()
+    
+    # Check if we need feature engineering (M > N)
+    if len(output_df.columns) > len(input_df.columns):
+        print(f"M ({len(output_df.columns)}) > N ({len(input_df.columns)}): Performing feature generation...")
+        enhanced_input_df = feature_engineer.generate_candidate_features()
+    else:
+        enhanced_input_df = input_df.copy()
+    
+    # Segment data by categorical features
+    segments = categorical_handler.segment_data(enhanced_input_df)
+    print(f"Data segmented into {len(segments)} segments based on categorical features")
+    
+    # Discover rules per segment
+    all_rules = {}
+    for segment_name, segment_df in segments.items():
+        segment_output = categorical_handler.get_corresponding_output(output_df, segment_df)
+        
+        print(f"Discovering rules for segment: {segment_name}")
+        segment_rules = rule_discoverer.discover_rules(segment_df, segment_output)
+        
+        # Store discovered rules with segment information
+        for output_col, rule in segment_rules.items():
+            if output_col not in all_rules:
+                all_rules[output_col] = {}
+            all_rules[output_col][segment_name] = rule
+    
+    # 3. Validate rules
+    print("\nValidating discovered rules...")
+    validation_accuracy = rule_validator.validate_rules(all_rules, enhanced_input_df, output_df, categorical_handler)
+    
+    print(f"\nOverall rule validation accuracy: {validation_accuracy:.2f}")
+    
+    # 4. Display discovered rules
+    print("\n=== DISCOVERED TRANSFORMATION RULES ===")
+    for output_col, rules_by_segment in all_rules.items():
+        print(f"\n{output_col}:")
+        if len(rules_by_segment) == 1:
+            # Single rule for all data
+            print(f"  {next(iter(rules_by_segment.values()))}")
+        else:
+            # Conditional rules
+            for segment, rule in rules_by_segment.items():
+                print(f"  When {segment}: {rule}")
+    print("======================================\n")
+    
+    # 5. Export discovered rules to JSON
+    with open('discovered_rules_real_data.json', 'w') as f:
+        json.dump(all_rules, f, indent=2)
+    
+    print("Rules exported to 'discovered_rules_real_data.json'")
+
+if __name__ == "__main__":
+    # Run with synthetic data
+    run_example()
+    
+    # Uncomment to run with real data
+    # run_real_data_example(
+    #     input_file="input_data.csv",
+    #     output_file="output_data.csv",
+    #     categorical_cols=["category1", "category2"]
+    # )
+
+
+
+
+
