@@ -1,1 +1,239 @@
 
+"""
+data_preparation.py
+
+This module handles data preparation tasks including:
+- Loading input and output datasets
+- Matching rows between datasets
+- Identifying feature types (numeric, categorical)
+- Basic data exploration
+"""
+
+import pandas as pd
+import numpy as np
+from typing import Tuple, List, Dict
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+def load_data(input_path: str, output_path: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Load input and output datasets from files.
+    
+    Args:
+        input_path: Path to the input dataset file
+        output_path: Path to the output dataset file
+        
+    Returns:
+        Tuple containing input and output dataframes
+    """
+    input_df = pd.read_csv(input_path)
+    output_df = pd.read_csv(output_path)
+    
+    print(f"Input dataset: {input_df.shape[0]} rows, {input_df.shape[1]} columns")
+    print(f"Output dataset: {output_df.shape[0]} rows, {output_df.shape[1]} columns")
+    
+    return input_df, output_df
+
+def match_datasets(input_df: pd.DataFrame, output_df: pd.DataFrame, 
+                   key_columns: List[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Match rows between input and output datasets.
+    
+    Args:
+        input_df: Input dataset
+        output_df: Output dataset
+        key_columns: List of columns to use for matching, if None tries to infer
+        
+    Returns:
+        Tuple of matched input and output dataframes
+    """
+    # If key columns not provided, try to infer based on common columns
+    if key_columns is None:
+        common_cols = set(input_df.columns).intersection(set(output_df.columns))
+        if len(common_cols) > 0:
+            key_columns = list(common_cols)
+            print(f"Using inferred key columns for matching: {key_columns}")
+        else:
+            raise ValueError("No common columns found between datasets and no key_columns provided")
+    
+    # Merge datasets to ensure alignment
+    merged = pd.merge(input_df, output_df, on=key_columns, suffixes=('_input', '_output'))
+    
+    # Split merged dataset back into aligned input and output
+    input_cols = [col for col in merged.columns if not col.endswith('_output')]
+    output_cols = [col for col in merged.columns if col.endswith('_output')]
+    output_cols = [col.replace('_output', '') for col in output_cols]
+    
+    matched_input = merged[input_cols].copy()
+    matched_output = merged[[col + '_output' for col in output_cols]].copy()
+    matched_output.columns = output_cols
+    
+    print(f"Matched datasets: {matched_input.shape[0]} rows")
+    
+    return matched_input, matched_output
+
+def identify_feature_types(df: pd.DataFrame) -> Dict[str, List[str]]:
+    """
+    Identify feature types in the dataframe.
+    
+    Args:
+        df: Dataframe to analyze
+        
+    Returns:
+        Dictionary with lists of numeric, categorical, and datetime columns
+    """
+    numeric_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
+    
+    # Identify potential categorical columns (including those stored as numeric)
+    potential_categorical = []
+    for col in df.columns:
+        if df[col].dtype == 'object' or df[col].nunique() < 10:
+            potential_categorical.append(col)
+    
+    # Remove overlap (numeric columns that are also potentially categorical)
+    categorical_cols = [col for col in potential_categorical if col not in numeric_cols]
+    
+    # Check for datetime columns
+    datetime_cols = []
+    for col in df.columns:
+        try:
+            pd.to_datetime(df[col])
+            if col not in numeric_cols and col not in categorical_cols:
+                datetime_cols.append(col)
+        except:
+            pass
+    
+    return {
+        'numeric': numeric_cols,
+        'categorical': categorical_cols,
+        'datetime': datetime_cols
+    }
+
+def explore_data(input_df: pd.DataFrame, output_df: pd.DataFrame, 
+                save_path: str = None) -> Dict:
+    """
+    Perform basic exploratory data analysis.
+    
+    Args:
+        input_df: Input dataset
+        output_df: Output dataset
+        save_path: Path to save visualizations, if provided
+        
+    Returns:
+        Dictionary with analysis results
+    """
+    results = {
+        'input_summary': input_df.describe().to_dict(),
+        'output_summary': output_df.describe().to_dict(),
+        'input_na': input_df.isna().sum().to_dict(),
+        'output_na': output_df.isna().sum().to_dict(),
+        'input_types': identify_feature_types(input_df),
+        'output_types': identify_feature_types(output_df)
+    }
+    
+    # Create basic visualizations if save_path is provided
+    if save_path:
+        # Plot distributions of numeric features
+        for col in results['input_types']['numeric']:
+            plt.figure(figsize=(10, 6))
+            sns.histplot(input_df[col], kde=True)
+            plt.title(f'Distribution of {col} (Input)')
+            plt.savefig(f"{save_path}/input_{col}_dist.png")
+            plt.close()
+        
+        for col in results['output_types']['numeric']:
+            plt.figure(figsize=(10, 6))
+            sns.histplot(output_df[col], kde=True)
+            plt.title(f'Distribution of {col} (Output)')
+            plt.savefig(f"{save_path}/output_{col}_dist.png")
+            plt.close()
+        
+        # Create correlation heatmap for input features
+        if len(results['input_types']['numeric']) > 1:
+            plt.figure(figsize=(12, 10))
+            sns.heatmap(input_df[results['input_types']['numeric']].corr(), annot=True, cmap='coolwarm')
+            plt.title('Input Features Correlation')
+            plt.savefig(f"{save_path}/input_correlation.png")
+            plt.close()
+        
+        # Create correlation heatmap for output features
+        if len(results['output_types']['numeric']) > 1:
+            plt.figure(figsize=(12, 10))
+            sns.heatmap(output_df[results['output_types']['numeric']].corr(), annot=True, cmap='coolwarm')
+            plt.title('Output Features Correlation')
+            plt.savefig(f"{save_path}/output_correlation.png")
+            plt.close()
+    
+    return results
+
+def analyze_relationships(input_df: pd.DataFrame, output_df: pd.DataFrame) -> Dict:
+    """
+    Analyze potential relationships between input and output columns.
+    
+    Args:
+        input_df: Input dataset
+        output_df: Output dataset
+        
+    Returns:
+        Dictionary with analysis of potential relationships
+    """
+    # Ensure dataframes have the same index
+    if input_df.shape[0] != output_df.shape[0]:
+        raise ValueError("Input and output dataframes must have the same number of rows")
+    
+    relationships = {}
+    input_types = identify_feature_types(input_df)
+    output_types = identify_feature_types(output_df)
+    
+    # For each numeric output column, find potential correlated input columns
+    for out_col in output_types['numeric']:
+        correlations = {}
+        for in_col in input_types['numeric']:
+            corr = input_df[in_col].corr(output_df[out_col])
+            correlations[in_col] = corr
+        
+        # Sort correlations by absolute value
+        sorted_correlations = {k: v for k, v in sorted(
+            correlations.items(), 
+            key=lambda item: abs(item[1]), 
+            reverse=True
+        )}
+        
+        relationships[out_col] = {
+            'correlated_inputs': sorted_correlations,
+            'potential_categories': input_types['categorical']
+        }
+    
+    return relationships
+
+if __name__ == "__main__":
+    # Example usage
+    print("This module is meant to be imported, but here's a quick example:")
+    
+    # Create sample data
+    input_data = {
+        'id': [1, 2, 3, 4, 5],
+        'feature1': [10, 20, 30, 40, 50],
+        'feature2': [5, 10, 15, 20, 25],
+        'category': ['A', 'B', 'A', 'B', 'A']
+    }
+    
+    output_data = {
+        'id': [1, 2, 3, 4, 5],
+        'output1': [20, 30, 60, 50, 100],
+        'output2': [15, 30, 45, 60, 75]
+    }
+    
+    input_df = pd.DataFrame(input_data)
+    output_df = pd.DataFrame(output_data)
+    
+    # Match datasets
+    matched_input, matched_output = match_datasets(input_df, output_df, key_columns=['id'])
+    
+    # Identify feature types
+    input_types = identify_feature_types(matched_input)
+    print("Input feature types:", input_types)
+    
+    # Analyze relationships
+    relationships = analyze_relationships(matched_input, matched_output)
+    print("Relationships:", relationships)
