@@ -1,300 +1,197 @@
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+import random
 
-class RuleValidator:
+class DatasetGenerator:
     """
-    Validates discovered transformation rules by applying them to test data
-    and comparing the results with actual output values.
+    Generates synthetic datasets with known transformation rules
+    for testing and demonstration purposes.
     """
     
-    def validate_rules(self, all_rules, input_df, output_df, categorical_handler, test_size=0.2, random_state=42):
+    def __init__(self, n_samples=100, n_input_cols=3, n_output_cols=5, categorical_cols=1, seed=42):
         """
-        Validate discovered rules on test data.
+        Initialize the DatasetGenerator.
         
         Args:
-            all_rules (dict): Dictionary of discovered rules by output column and segment
+            n_samples (int): Number of data samples to generate
+            n_input_cols (int): Number of input columns
+            n_output_cols (int): Number of output columns
+            categorical_cols (int): Number of categorical columns in the input
+            seed (int): Random seed for reproducibility
+        """
+        self.n_samples = n_samples
+        self.n_input_cols = n_input_cols
+        self.n_output_cols = n_output_cols
+        self.categorical_cols = categorical_cols
+        self.seed = seed
+        
+        # Set random seed for reproducibility
+        np.random.seed(seed)
+        random.seed(seed)
+        
+        # Store the true transformation rules
+        self.true_rules = {}
+    
+    def generate_datasets(self):
+        """
+        Generate synthetic input and output datasets with known rules.
+        
+        Returns:
+            tuple: (input_df, output_df, rules_dict)
+        """
+        # Generate input data
+        input_df = self._generate_input_data()
+        
+        # Generate output data based on transformation rules
+        output_df, rules_dict = self._generate_output_data(input_df)
+        
+        return input_df, output_df, rules_dict
+    
+    def _generate_input_data(self):
+        """Generate input dataset with numeric and categorical columns"""
+        data = {}
+        
+        # Generate numeric columns
+        for i in range(self.n_input_cols - self.categorical_cols):
+            col_name = f"input_col{i+1}"
+            # Generate values between 1 and 100
+            data[col_name] = np.random.uniform(1, 100, self.n_samples)
+        
+        # Generate categorical columns
+        for i in range(self.categorical_cols):
+            col_name = f"category{i+1}" if i > 0 else "category"
+            # Generate categorical values (A, B, C, etc.)
+            categories = [chr(65 + j) for j in range(3)]  # A, B, C
+            data[col_name] = np.random.choice(categories, self.n_samples)
+        
+        return pd.DataFrame(data)
+    
+    def _generate_output_data(self, input_df):
+        """
+        Generate output data based on transformation rules.
+        
+        Args:
             input_df (pd.DataFrame): Input dataset
-            output_df (pd.DataFrame): Output dataset
-            categorical_handler (CategoricalHandler): Handler for categorical data
-            test_size (float): Proportion of data to use for testing
-            random_state (int): Random seed for reproducibility
             
         Returns:
-            float: Overall validation accuracy
+            tuple: (output_df, rules_dict)
         """
-        # Split data into train and test sets
-        input_train, input_test, output_train, output_test = train_test_split(
-            input_df, output_df, test_size=test_size, random_state=random_state
-        )
+        output_data = {}
+        rules_dict = {}
         
-        # Apply rules to test data
-        predicted_output = self._apply_rules(all_rules, input_test, categorical_handler)
+        # Get numeric input columns
+        numeric_cols = input_df.select_dtypes(include=['int64', 'float64']).columns.tolist()
         
-        # Calculate accuracy per output column
-        column_accuracies = {}
-        for col in output_test.columns:
-            if col in predicted_output.columns:
-                # Calculate normalized RMSE
-                rmse = np.sqrt(np.mean((predicted_output[col] - output_test[col]) ** 2))
+        # Get categorical columns
+        cat_cols = [col for col in input_df.columns if col not in numeric_cols]
+        
+        # Define transformation types
+        transformations = [
+            'direct',              # Direct mapping (e.g., output_col = input_col)
+            'constant_factor',     # Multiplication by a constant (e.g., output_col = 2 * input_col)
+            'addition',            # Addition with a constant (e.g., output_col = input_col + 10)
+            'squared',             # Square (e.g., output_col = input_col^2)
+            'combination',         # Combination of columns (e.g., output_col = input_col1 + input_col2)
+            'conditional'          # Conditional transformation based on categorical value
+        ]
+        
+        # Generate output columns
+        for i in range(self.n_output_cols):
+            output_col_name = f"output_col{i+1}"
+            
+            # Choose a transformation type
+            if cat_cols and i % 3 == 0:  # Every third column is conditional if we have categorical columns
+                transformation = 'conditional'
+            else:
+                transformation = random.choice(transformations[:-1])  # Exclude conditional for other columns
+            
+            # Apply the transformation
+            if transformation == 'direct':
+                input_col = random.choice(numeric_cols)
+                output_data[output_col_name] = input_df[input_col].values
+                rules_dict[output_col_name] = f"Direct: {output_col_name} = {input_col}"
                 
-                # Normalize by the range of the output
-                output_range = output_test[col].max() - output_test[col].min()
-                if output_range > 0:
-                    normalized_rmse = rmse / output_range
-                    accuracy = max(0, 1 - normalized_rmse)
+            elif transformation == 'constant_factor':
+                input_col = random.choice(numeric_cols)
+                factor = round(random.uniform(0.5, 5.0), 2)
+                output_data[output_col_name] = input_df[input_col].values * factor
+                rules_dict[output_col_name] = f"Constant factor: {output_col_name} = {factor} * {input_col}"
+                
+            elif transformation == 'addition':
+                input_col = random.choice(numeric_cols)
+                constant = round(random.uniform(-50, 50), 2)
+                output_data[output_col_name] = input_df[input_col].values + constant
+                rules_dict[output_col_name] = f"Addition: {output_col_name} = {input_col} + {constant}"
+                
+            elif transformation == 'squared':
+                input_col = random.choice(numeric_cols)
+                output_data[output_col_name] = input_df[input_col].values ** 2
+                rules_dict[output_col_name] = f"Squared: {output_col_name} = {input_col}^2"
+                
+            elif transformation == 'combination':
+                if len(numeric_cols) >= 2:
+                    input_col1, input_col2 = random.sample(numeric_cols, 2)
+                    operation = random.choice(['+', '-', '*'])
+                    
+                    if operation == '+':
+                        output_data[output_col_name] = input_df[input_col1].values + input_df[input_col2].values
+                        rules_dict[output_col_name] = f"Combination: {output_col_name} = {input_col1} + {input_col2}"
+                    elif operation == '-':
+                        output_data[output_col_name] = input_df[input_col1].values - input_df[input_col2].values
+                        rules_dict[output_col_name] = f"Combination: {output_col_name} = {input_col1} - {input_col2}"
+                    else:  # '*'
+                        output_data[output_col_name] = input_df[input_col1].values * input_df[input_col2].values
+                        rules_dict[output_col_name] = f"Combination: {output_col_name} = {input_col1} * {input_col2}"
                 else:
-                    # If range is 0, check if predictions match exactly
-                    accuracy = float(np.array_equal(predicted_output[col], output_test[col]))
+                    # Fallback to direct mapping if we don't have enough numeric columns
+                    input_col = numeric_cols[0]
+                    output_data[output_col_name] = input_df[input_col].values
+                    rules_dict[output_col_name] = f"Direct: {output_col_name} = {input_col}"
+                    
+            elif transformation == 'conditional':
+                cat_col = random.choice(cat_cols)
+                rules_dict[output_col_name] = f"Conditional based on {cat_col}:"
                 
-                column_accuracies[col] = accuracy
-        
-        # Calculate overall accuracy
-        if column_accuracies:
-            overall_accuracy = sum(column_accuracies.values()) / len(column_accuracies)
-        else:
-            overall_accuracy = 0.0
-            
-        # Print detailed accuracy report
-        print("\nValidation Results:")
-        print(f"{'Column':<15} {'Accuracy':<10}")
-        print("-" * 25)
-        for col, acc in column_accuracies.items():
-            print(f"{col:<15} {acc:.4f}")
-            
-        return overall_accuracy
-    
-    def _apply_rules(self, all_rules, input_df, categorical_handler):
-        """
-        Apply discovered rules to input data to predict outputs.
-        
-        Args:
-            all_rules (dict): Dictionary of discovered rules by output column and segment
-            input_df (pd.DataFrame): Input dataset
-            categorical_handler (CategoricalHandler): Handler for categorical data
-            
-        Returns:
-            pd.DataFrame: Predicted output dataset
-        """
-        # Initialize empty DataFrame for predictions
-        predicted_output = pd.DataFrame(index=input_df.index)
-        
-        # Segment the input data
-        segments = categorical_handler.segment_data(input_df)
-        
-        # Apply rules to each segment
-        for output_col, rules_by_segment in all_rules.items():
-            # Initialize column with NaN values
-            predicted_output[output_col] = np.nan
-            
-            # Apply segment-specific rules
-            for segment_name, rule in rules_by_segment.items():
-                if segment_name in segments:
-                    segment_df = segments[segment_name]
-                    segment_indices = segment_df.index
+                # Initialize output column with zeros
+                output_data[output_col_name] = np.zeros(self.n_samples)
+                
+                # Apply different rules for each category
+                for category in input_df[cat_col].unique():
+                    # Choose an input column and transformation for this category
+                    input_col = random.choice(numeric_cols)
+                    category_transformation = random.choice(['direct', 'constant_factor', 'addition'])
                     
-                    try:
-                        predicted_values = self._evaluate_rule(rule, segment_df)
-                        predicted_output.loc[segment_indices, output_col] = predicted_values
-                    except Exception as e:
-                        print(f"Error applying rule '{rule}' for {output_col} in segment {segment_name}: {e}")
-        
-        return predicted_output
-    
-    def _evaluate_rule(self, rule, input_df):
-        """
-        Evaluate a rule string on the input data.
-        
-        Args:
-            rule (str): Rule string to evaluate
-            input_df (pd.DataFrame): Input dataframe
-            
-        Returns:
-            np.ndarray: Predicted values
-        """
-        # Handle different rule types
-        if "Unknown transformation" in rule:
-            # Return NaN for unknown rules
-            return np.full(len(input_df), np.nan)
-            
-        if "Decision tree" in rule:
-            # For decision tree rules, we can't directly evaluate
-            # In a real implementation, you would store the trained model
-            return np.full(len(input_df), np.nan)
-        
-        # For simple arithmetic rules
-        try:
-            # Replace column names with actual values
-            numeric_input_df = input_df.copy()
-            if isinstance(numeric_input_df, pd.Series):
-                numeric_input_df = pd.DataFrame(numeric_input_df)
-            
-            # Create a dictionary mapping column names to their values
-            columns_dict = {}
-            for col in numeric_input_df.columns:
-                if col in rule:
-                    columns_dict[col] = numeric_input_df[col].values
-            
-            # Simple parsing and evaluation for basic arithmetic
-            # This is a simplified implementation - a real one would use a proper expression parser
-            result = self._simple_rule_evaluation(rule, columns_dict)
-            return result
-            
-        except Exception as e:
-            print(f"Error evaluating rule '{rule}': {e}")
-            return np.full(len(input_df), np.nan)
-    
-    def _simple_rule_evaluation(self, rule, columns_dict):
-        """
-        Simple evaluation of arithmetic rules.
-        
-        Args:
-            rule (str): Rule string to evaluate
-            columns_dict (dict): Dictionary mapping column names to their values
-            
-        Returns:
-            np.ndarray: Result of rule evaluation
-        """
-        # This is a simplified implementation - in practice, you'd use a proper expression parser
-        # Handle some common cases
-        
-        # Direct column reference
-        if rule in columns_dict:
-            return columns_dict[rule]
-        
-        # Constant multiplication: "2 * col"
-        if '*' in rule and len(rule.split('*')) == 2:
-            parts = rule.split('*')
-            factor_part = parts[0].strip()
-            col_part = parts[1].strip()
-            
-            if col_part in columns_dict:
-                try:
-                    factor = float(factor_part)
-                    return factor * columns_dict[col_part]
-                except:
-                    pass
-            
-            if factor_part in columns_dict:
-                try:
-                    factor = float(col_part)
-                    return factor * columns_dict[factor_part]
-                except:
-                    pass
+                    # Filter rows for this category
+                    category_mask = input_df[cat_col] == category
                     
-            if factor_part in columns_dict and col_part in columns_dict:
-                return columns_dict[factor_part] * columns_dict[col_part]
+                    if category_transformation == 'direct':
+                        output_data[output_col_name][category_mask] = input_df.loc[category_mask, input_col].values
+                        rules_dict[output_col_name] += f"\n  If {cat_col} = '{category}': {output_col_name} = {input_col}"
+                    
+                    elif category_transformation == 'constant_factor':
+                        factor = round(random.uniform(0.5, 5.0), 2)
+                        output_data[output_col_name][category_mask] = input_df.loc[category_mask, input_col].values * factor
+                        rules_dict[output_col_name] += f"\n  If {cat_col} = '{category}': {output_col_name} = {factor} * {input_col}"
+                    
+                    elif category_transformation == 'addition':
+                        constant = round(random.uniform(-50, 50), 2)
+                        output_data[output_col_name][category_mask] = input_df.loc[category_mask, input_col].values + constant
+                        rules_dict[output_col_name] += f"\n  If {cat_col} = '{category}': {output_col_name} = {input_col} + {constant}"
         
-        # Addition: "col1 + col2" or "col + constant"
-        if '+' in rule and len(rule.split('+')) == 2:
-            parts = rule.split('+')
-            left_part = parts[0].strip()
-            right_part = parts[1].strip()
-            
-            # col + constant
-            if left_part in columns_dict:
-                try:
-                    constant = float(right_part)
-                    return columns_dict[left_part] + constant
-                except:
-                    pass
-            
-            # constant + col
-            if right_part in columns_dict:
-                try:
-                    constant = float(left_part)
-                    return constant + columns_dict[right_part]
-                except:
-                    pass
-            
-            # col1 + col2
-            if left_part in columns_dict and right_part in columns_dict:
-                return columns_dict[left_part] + columns_dict[right_part]
+        return pd.DataFrame(output_data), rules_dict
         
-        # Subtraction: "col1 - col2" or "col - constant"
-        if '-' in rule and len(rule.split('-')) == 2:
-            parts = rule.split('-')
-            left_part = parts[0].strip()
-            right_part = parts[1].strip()
-            
-            # col - constant
-            if left_part in columns_dict:
-                try:
-                    constant = float(right_part)
-                    return columns_dict[left_part] - constant
-                except:
-                    pass
-            
-            # constant - col (less common)
-            if right_part in columns_dict:
-                try:
-                    constant = float(left_part)
-                    return constant - columns_dict[right_part]
-                except:
-                    pass
-            
-            # col1 - col2
-            if left_part in columns_dict and right_part in columns_dict:
-                return columns_dict[left_part] - columns_dict[right_part]
+    def print_true_rules(self, rules_dict):
+        """
+        Print the true transformation rules in a readable format.
         
-        # Division: "col1 / col2" or "col / constant"
-        if '/' in rule and len(rule.split('/')) == 2:
-            parts = rule.split('/')
-            left_part = parts[0].strip()
-            right_part = parts[1].strip()
-            
-            # col / constant
-            if left_part in columns_dict:
-                try:
-                    constant = float(right_part)
-                    return np.divide(columns_dict[left_part], constant)
-                except:
-                    pass
-            
-            # constant / col
-            if right_part in columns_dict:
-                try:
-                    constant = float(left_part)
-                    return np.divide(constant, columns_dict[right_part], 
-                                    out=np.zeros_like(columns_dict[right_part]), 
-                                    where=columns_dict[right_part]!=0)
-                except:
-                    pass
-            
-            # col1 / col2
-            if left_part in columns_dict and right_part in columns_dict:
-                return np.divide(columns_dict[left_part], columns_dict[right_part],
-                                out=np.zeros_like(columns_dict[left_part]),
-                                where=columns_dict[right_part]!=0)
-        
-        # Square: "col^2"
-        if '^2' in rule:
-            col = rule.replace('^2', '').strip()
-            if col in columns_dict:
-                return columns_dict[col] ** 2
-        
-        # Square root: "sqrt(col)"
-        if rule.startswith('sqrt(') and rule.endswith(')'):
-            col = rule[5:-1].strip()
-            if col in columns_dict:
-                return np.sqrt(np.maximum(columns_dict[col], 0))  # Avoid negative values
-        
-        # Log: "log(col)"
-        if rule.startswith('log(') and rule.endswith(')'):
-            col = rule[4:-1].strip()
-            if col in columns_dict:
-                return np.log(np.maximum(columns_dict[col], 1e-10))  # Avoid log(0)
-        
-        # Exp: "exp(col)"
-        if rule.startswith('exp(') and rule.endswith(')'):
-            col = rule[4:-1].strip()
-            if col in columns_dict:
-                return np.exp(np.minimum(columns_dict[col], 20))  # Avoid overflow
-        
-        # If we can't parse it, return NaN
-        return np.full(len(next(iter(columns_dict.values()))), np.nan)
-
-
+        Args:
+            rules_dict (dict): Dictionary of true transformation rules
+        """
+        print("\n=== TRUE TRANSFORMATION RULES ===")
+        for output_col, rule in rules_dict.items():
+            print(f"\n{output_col}:")
+            print(f"  {rule}")
+        print("================================\n")
 
 
 
