@@ -2,11 +2,13 @@ import pandas as pd
 import numpy as np
 import itertools
 from sklearn.preprocessing import PolynomialFeatures
+from sklearn.tree import DecisionTreeClassifier
 
 class FeatureEngineer:
     """
     Generates candidate features from input columns to help discover
     transformation rules when output dataset has more columns than input.
+    Handles both numerical and categorical output columns.
     """
     
     def __init__(self, input_df, output_df):
@@ -31,6 +33,10 @@ class FeatureEngineer:
             self._log,
             self._exp
         ]
+        
+        # Identify numerical and categorical columns in output
+        self.output_numeric_cols = output_df.select_dtypes(include=['number']).columns.tolist()
+        self.output_categorical_cols = output_df.select_dtypes(exclude=['number']).columns.tolist()
     
     def generate_candidate_features(self):
         """
@@ -42,11 +48,34 @@ class FeatureEngineer:
         print("Generating candidate features...")
         enhanced_df = self.input_df.copy()
         
-        # Separate numerical and categorical columns
+        # Separate numerical and categorical columns in input
         numeric_cols = self.input_df.select_dtypes(include=['number']).columns.tolist()
         categorical_cols = self.input_df.select_dtypes(exclude=['number']).columns.tolist()
         
         # Step 1: Generate single-column transformations
+        self._generate_single_column_transformations(enhanced_df, numeric_cols)
+        
+        # Step 2: Generate pairwise combinations of columns
+        self._generate_pairwise_combinations(enhanced_df, numeric_cols)
+        
+        # Step 3: Generate polynomial features (degree 2)
+        self._generate_polynomial_features(enhanced_df, numeric_cols)
+        
+        # Step 4: Generate categorical interactions
+        self._generate_categorical_interactions(enhanced_df, numeric_cols, categorical_cols)
+        
+        # Step 5: Generate categorical output predictors
+        if self.output_categorical_cols:
+            self._generate_categorical_output_predictors(enhanced_df, numeric_cols, categorical_cols)
+        
+        # Step 6: Evaluate candidate features
+        self._evaluate_candidate_features(enhanced_df)
+        
+        print(f"Generated {len(enhanced_df.columns) - len(self.input_df.columns)} new features")
+        return enhanced_df
+    
+    def _generate_single_column_transformations(self, enhanced_df, numeric_cols):
+        """Generate transformations of single numeric columns"""
         for col in numeric_cols:
             for operation in self.operations:
                 try:
@@ -67,8 +96,9 @@ class FeatureEngineer:
                         print(f"  Generated feature: {new_col_name}")
                 except Exception as e:
                     print(f"  Error generating {operation.__name__} for {col}: {e}")
-        
-        # Step 2: Generate pairwise combinations of columns
+    
+    def _generate_pairwise_combinations(self, enhanced_df, numeric_cols):
+        """Generate combinations of pairs of numeric columns"""
         if len(numeric_cols) >= 2:
             for col1, col2 in itertools.combinations(numeric_cols, 2):
                 for operation in [self._addition, self._subtraction, self._multiplication, self._division]:
@@ -94,8 +124,9 @@ class FeatureEngineer:
                     except Exception as e:
                         op_name = operation.__name__.replace('_', '')
                         print(f"  Error generating {op_name} for {col1} and {col2}: {e}")
-        
-        # Step 3: Generate polynomial features (degree 2)
+    
+    def _generate_polynomial_features(self, enhanced_df, numeric_cols):
+        """Generate polynomial features from numeric columns"""
         if len(numeric_cols) >= 1:
             try:
                 poly = PolynomialFeatures(degree=2, include_bias=False, interaction_only=False)
@@ -126,8 +157,9 @@ class FeatureEngineer:
                         print(f"  Generated polynomial feature: {feature_name}")
             except Exception as e:
                 print(f"  Error generating polynomial features: {e}")
-        
-        # Step 4: Generate categorical interactions if there are categorical columns
+    
+    def _generate_categorical_interactions(self, enhanced_df, numeric_cols, categorical_cols):
+        """Generate interactions between numerical and categorical columns"""
         if categorical_cols:
             # One-hot encode categorical columns if needed
             for cat_col in categorical_cols:
@@ -144,30 +176,88 @@ class FeatureEngineer:
                         
                         enhanced_df[new_col_name] = self.input_df[num_col] * dummies[dummy_col]
                         print(f"  Generated categorical interaction: {new_col_name}")
+    
+    def _generate_categorical_output_predictors(self, enhanced_df, numeric_cols, categorical_cols):
+        """
+        Generate features that might be predictive of categorical output columns.
+        This creates derived features that help in discovering rules for categorical outputs.
+        """
+        print("\nGenerating predictors for categorical output columns...")
         
-        # Step 5: Find if output columns are highly correlated with any of the generated features
-        # This helps identify potential transformations
-        self._evaluate_candidate_features(enhanced_df)
-        
-        print(f"Generated {len(enhanced_df.columns) - len(self.input_df.columns)} new features")
-        return enhanced_df
+        for output_cat_col in self.output_categorical_cols:
+            try:
+                # Get unique values in the categorical output
+                unique_values = self.output_df[output_cat_col].unique()
+                
+                # For binary classification (or multi-class one-vs-rest approach)
+                for value in unique_values:
+                    # Create binary target (1 if output equals the value, 0 otherwise)
+                    binary_target = (self.output_df[output_cat_col] == value).astype(int)
+                    
+                    # Use decision tree to find thresholds in numeric features
+                    if numeric_cols:
+                        # Train a small decision tree
+                        clf = DecisionTreeClassifier(max_depth=3, min_samples_leaf=5)
+                        clf.fit(self.input_df[numeric_cols], binary_target)
+                        
+                        # Extract important features and thresholds
+                        feature_importances = clf.feature_importances_
+                        
+                        # Generate binary indicators based on decision tree splits
+                        for i, feature_idx in enumerate(np.argsort(feature_importances)[-3:]):  # Top 3 important features
+                            if feature_importances[feature_idx] > 0.05:  # Only keep somewhat important features
+                                feature_name = numeric_cols[feature_idx]
+                                
+                                # Find a threshold from the tree (simplified approach)
+                                feature_values = self.input_df[feature_name].values
+                                threshold = np.median(feature_values)
+                                
+                                # Create binary indicator feature
+                                new_col_name = f"{feature_name}_gt_{threshold:.2f}_for_{output_cat_col}_{value}"
+                                enhanced_df[new_col_name] = (self.input_df[feature_name] > threshold).astype(int)
+                                print(f"  Generated categorical predictor: {new_col_name}")
+                
+                # For categorical inputs, create combination features
+                if categorical_cols:
+                    for cat_col in categorical_cols:
+                        # Create a cross-tabulation and look for patterns
+                        crosstab = pd.crosstab(self.input_df[cat_col], self.output_df[output_cat_col])
+                        
+                        # Identify categories with strong associations
+                        for input_cat in crosstab.index:
+                            for output_cat in crosstab.columns:
+                                if crosstab.loc[input_cat, output_cat] > 0:
+                                    # Create indicator feature
+                                    new_col_name = f"{cat_col}_{input_cat}_predicts_{output_cat_col}_{output_cat}"
+                                    enhanced_df[new_col_name] = (self.input_df[cat_col] == input_cat).astype(int)
+                                    print(f"  Generated categorical association: {new_col_name}")
+            
+            except Exception as e:
+                print(f"  Error generating predictors for {output_cat_col}: {e}")
     
     def _evaluate_candidate_features(self, enhanced_df):
         """
-        Evaluate generated features by checking correlation with output columns.
-        
-        Args:
-            enhanced_df (pd.DataFrame): Enhanced input DataFrame with generated features
+        Evaluate generated features by checking correlation with output columns
+        and predictive power for categorical outputs.
         """
+        # Evaluate for numeric output columns
+        self._evaluate_numeric_features(enhanced_df)
+        
+        # Evaluate for categorical output columns
+        if self.output_categorical_cols:
+            self._evaluate_categorical_features(enhanced_df)
+    
+    def _evaluate_numeric_features(self, enhanced_df):
+        """Evaluate features for numeric output columns"""
         # Only analyze numeric columns
         numeric_enhanced = enhanced_df.select_dtypes(include=['number'])
-        numeric_output = self.output_df.select_dtypes(include=['number'])
+        numeric_output = self.output_df[self.output_numeric_cols]
         
         if numeric_output.empty:
             return
         
         # Find correlations between generated features and output columns
-        print("\nTop correlations between generated features and output columns:")
+        print("\nTop correlations between generated features and numeric output columns:")
         
         for output_col in numeric_output.columns:
             correlations = {}
@@ -193,6 +283,45 @@ class FeatureEngineer:
                 print(f"\nFor {output_col}:")
                 for feature, corr in sorted_corrs[:3]:
                     print(f"  {feature}: correlation = {corr:.4f}")
+    
+    def _evaluate_categorical_features(self, enhanced_df):
+        """Evaluate features for categorical output columns"""
+        print("\nFeature associations with categorical output columns:")
+        
+        for output_col in self.output_categorical_cols:
+            # Get all numeric columns from enhanced dataframe
+            numeric_features = enhanced_df.select_dtypes(include=['number']).columns
+            
+            # Only keep the features we generated (not original)
+            generated_features = [col for col in numeric_features if col not in self.input_df.columns]
+            
+            if not generated_features:
+                continue
+                
+            print(f"\nFor {output_col}:")
+            
+            # For each value in the categorical output
+            for category in self.output_df[output_col].unique():
+                binary_target = (self.output_df[output_col] == category).astype(int)
+                
+                # Calculate point-biserial correlation for each generated feature
+                correlations = {}
+                for feature in generated_features:
+                    try:
+                        # Using pearson correlation as equivalent to point-biserial for binary variables
+                        corr = enhanced_df[feature].corr(binary_target)
+                        if not np.isnan(corr):
+                            correlations[feature] = abs(corr)
+                    except:
+                        continue
+                
+                # Sort and print top associations
+                sorted_corrs = sorted(correlations.items(), key=lambda x: x[1], reverse=True)
+                if sorted_corrs:
+                    top_n = min(3, len(sorted_corrs))
+                    print(f"  Value '{category}' is associated with:")
+                    for feature, corr in sorted_corrs[:top_n]:
+                        print(f"    {feature}: strength = {corr:.4f}")
     
     # Helper operations
     def _addition(self, a, b=None):
