@@ -1,393 +1,240 @@
 import pandas as pd
 import numpy as np
-import random
+import itertools
+from sklearn.preprocessing import PolynomialFeatures
 
-class DatasetGenerator:
+class FeatureEngineer:
     """
-    Generates synthetic datasets with known transformation rules
-    for testing and demonstration purposes.
+    Generates candidate features from input columns to help discover
+    transformation rules when output dataset has more columns than input.
     """
     
-    def __init__(self, n_samples=100, n_input_cols=3, n_output_cols=5, categorical_cols=1, seed=42):
+    def __init__(self, input_df, output_df):
         """
-        Initialize the DatasetGenerator.
+        Initialize the FeatureEngineer.
         
         Args:
-            n_samples (int): Number of data samples to generate
-            n_input_cols (int): Number of input columns
-            n_output_cols (int): Number of output columns
-            categorical_cols (int): Number of categorical columns in the input
-            seed (int): Random seed for reproducibility
+            input_df (pd.DataFrame): Input dataset with N columns
+            output_df (pd.DataFrame): Output dataset with M columns
         """
-        self.n_samples = n_samples
-        self.n_input_cols = n_input_cols
-        self.n_output_cols = n_output_cols
-        self.categorical_cols = categorical_cols
-        self.seed = seed
+        self.input_df = input_df
+        self.output_df = output_df
         
-        # Set random seed for reproducibility
-        np.random.seed(seed)
-        random.seed(seed)
-        
-        # Store the true transformation rules
-        self.true_rules = {}
-    
-    def generate_datasets(self):
-        """
-        Generate synthetic input and output datasets with known rules.
-        
-        Returns:
-            tuple: (input_df, output_df, rules_dict)
-        """
-        # Generate input data
-        input_df = self._generate_input_data()
-        
-        # Generate output data based on transformation rules
-        output_df, rules_dict = self._generate_output_data(input_df)
-        
-        return input_df, output_df, rules_dict
-    
-    def _generate_input_data(self):
-        """Generate input dataset with numeric and categorical columns"""
-        data = {}
-        
-        # Generate numeric columns
-        for i in range(self.n_input_cols - self.categorical_cols):
-            col_name = f"input_col{i+1}"
-            # Generate values between 1 and 100
-            data[col_name] = np.random.uniform(1, 100, self.n_samples)
-        
-        # Generate categorical columns
-        for i in range(self.categorical_cols):
-            col_name = f"category{i+1}" if i > 0 else "category"
-            # Generate categorical values (A, B, C, etc.)
-            categories = [chr(65 + j) for j in range(3)]  # A, B, C
-            data[col_name] = np.random.choice(categories, self.n_samples)
-        
-        return pd.DataFrame(data)
-    
-    def _generate_output_data(self, input_df):
-        """
-        Generate output data based on transformation rules.
-        
-        Args:
-            input_df (pd.DataFrame): Input dataset
-            
-        Returns:
-            tuple: (output_df, rules_dict)
-        """
-        output_data = {}
-        rules_dict = {}
-        
-        # Get numeric input columns
-        numeric_cols = input_df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-        
-        # Get categorical columns
-        cat_cols = [col for col in input_df.columns if col not in numeric_cols]
-        
-        # Define transformation types
-        transformations = [
-            'direct',              # Direct mapping (e.g., output_col = input_col)
-            'constant_factor',     # Multiplication by a constant (e.g., output_col = 2 * input_col)
-            'addition',            # Addition with a constant (e.g., output_col = input_col + 10)
-            'squared',             # Square (e.g., output_col = input_col^2)
-            'combination',         # Combination of columns (e.g., output_col = input_col1 + input_col2)
-            'conditional'          # Conditional transformation based on categorical value
+        # List of operations to try for feature generation
+        self.operations = [
+            self._addition,
+            self._subtraction,
+            self._multiplication,
+            self._division,
+            self._squared,
+            self._square_root,
+            self._log,
+            self._exp
         ]
-        
-        # Generate output columns
-        for i in range(self.n_output_cols):
-            output_col_name = f"output_col{i+1}"
-            
-            # Choose a transformation type
-            if cat_cols and i % 3 == 0:  # Every third column is conditional if we have categorical columns
-                transformation = 'conditional'
-            else:
-                transformation = random.choice(transformations[:-1])  # Exclude conditional for other columns
-            
-            # Apply the transformation
-            if transformation == 'direct':
-                input_col = random.choice(numeric_cols)
-                output_data[output_col_name] = input_df[input_col].values
-                rules_dict[output_col_name] = f"Direct: {output_col_name} = {input_col}"
-                
-            elif transformation == 'constant_factor':
-                input_col = random.choice(numeric_cols)
-                factor = round(random.uniform(0.5, 5.0), 2)
-                output_data[output_col_name] = input_df[input_col].values * factor
-                rules_dict[output_col_name] = f"Constant factor: {output_col_name} = {factor} * {input_col}"
-                
-            elif transformation == 'addition':
-                input_col = random.choice(numeric_cols)
-                constant = round(random.uniform(-50, 50), 2)
-                output_data[output_col_name] = input_df[input_col].values + constant
-                rules_dict[output_col_name] = f"Addition: {output_col_name} = {input_col} + {constant}"
-                
-            elif transformation == 'squared':
-                input_col = random.choice(numeric_cols)
-                output_data[output_col_name] = input_df[input_col].values ** 2
-                rules_dict[output_col_name] = f"Squared: {output_col_name} = {input_col}^2"
-                
-            elif transformation == 'combination':
-                if len(numeric_cols) >= 2:
-                    input_col1, input_col2 = random.sample(numeric_cols, 2)
-                    operation = random.choice(['+', '-', '*'])
-                    
-                    if operation == '+':
-                        output_data[output_col_name] = input_df[input_col1].values + input_df[input_col2].values
-                        rules_dict[output_col_name] = f"Combination: {output_col_name} = {input_col1} + {input_col2}"
-                    elif operation == '-':
-                        output_data[output_col_name] = input_df[input_col1].values - input_df[input_col2].values
-                        rules_dict[output_col_name] = f"Combination: {output_col_name} = {input_col1} - {input_col2}"
-                    else:  # '*'
-                        output_data[output_col_name] = input_df[input_col1].values * input_df[input_col2].values
-                        rules_dict[output_col_name] = f"Combination: {output_col_name} = {input_col1} * {input_col2}"
-                else:
-                    # Fallback to direct mapping if we don't have enough numeric columns
-                    input_col = numeric_cols[0]
-                    output_data[output_col_name] = input_df[input_col].values
-                    rules_dict[output_col_name] = f"Direct: {output_col_name} = {input_col}"
-                    
-            elif transformation == 'conditional':
-                cat_col = random.choice(cat_cols)
-                rules_dict[output_col_name] = f"Conditional based on {cat_col}:"
-                
-                # Initialize output column with zeros
-                output_data[output_col_name] = np.zeros(self.n_samples)
-                
-                # Apply different rules for each category
-                for category in input_df[cat_col].unique():
-                    # Choose an input column and transformation for this category
-                    input_col = random.choice(numeric_cols)
-                    category_transformation = random.choice(['direct', 'constant_factor', 'addition'])
-                    
-                    # Filter rows for this category
-                    category_mask = input_df[cat_col] == category
-                    
-                    if category_transformation == 'direct':
-                        output_data[output_col_name][category_mask] = input_df.loc[category_mask, input_col].values
-                        rules_dict[output_col_name] += f"\n  If {cat_col} = '{category}': {output_col_name} = {input_col}"
-                    
-                    elif category_transformation == 'constant_factor':
-                        factor = round(random.uniform(0.5, 5.0), 2)
-                        output_data[output_col_name][category_mask] = input_df.loc[category_mask, input_col].values * factor
-                        rules_dict[output_col_name] += f"\n  If {cat_col} = '{category}': {output_col_name} = {factor} * {input_col}"
-                    
-                    elif category_transformation == 'addition':
-                        constant = round(random.uniform(-50, 50), 2)
-                        output_data[output_col_name][category_mask] = input_df.loc[category_mask, input_col].values + constant
-                        rules_dict[output_col_name] += f"\n  If {cat_col} = '{category}': {output_col_name} = {input_col} + {constant}"
-        
-        return pd.DataFrame(output_data), rules_dict
-        
-    def print_true_rules(self, rules_dict):
+    
+    def generate_candidate_features(self):
         """
-        Print the true transformation rules in a readable format.
+        Generate candidate features based on input columns.
+        
+        Returns:
+            pd.DataFrame: Enhanced input DataFrame with additional generated features
+        """
+        print("Generating candidate features...")
+        enhanced_df = self.input_df.copy()
+        
+        # Separate numerical and categorical columns
+        numeric_cols = self.input_df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = self.input_df.select_dtypes(exclude=['number']).columns.tolist()
+        
+        # Step 1: Generate single-column transformations
+        for col in numeric_cols:
+            for operation in self.operations:
+                try:
+                    # Apply transformation and generate new feature name
+                    op_name = operation.__name__.replace('_', '')
+                    new_col_name = f"{op_name}_{col}"
+                    
+                    # Skip if column already exists
+                    if new_col_name in enhanced_df.columns:
+                        continue
+                    
+                    # Calculate transformed values
+                    transformed_values = operation(self.input_df[col].values)
+                    
+                    # Check if the transformation produces valid results
+                    if not np.any(np.isnan(transformed_values)) and not np.any(np.isinf(transformed_values)):
+                        enhanced_df[new_col_name] = transformed_values
+                        print(f"  Generated feature: {new_col_name}")
+                except Exception as e:
+                    print(f"  Error generating {operation.__name__} for {col}: {e}")
+        
+        # Step 2: Generate pairwise combinations of columns
+        if len(numeric_cols) >= 2:
+            for col1, col2 in itertools.combinations(numeric_cols, 2):
+                for operation in [self._addition, self._subtraction, self._multiplication, self._division]:
+                    try:
+                        # Generate feature name
+                        op_symbol = self._get_operation_symbol(operation)
+                        new_col_name = f"{col1}{op_symbol}{col2}"
+                        
+                        # Skip if column already exists
+                        if new_col_name in enhanced_df.columns:
+                            continue
+                        
+                        # Calculate combined values
+                        combined_values = operation(
+                            self.input_df[col1].values, 
+                            self.input_df[col2].values
+                        )
+                        
+                        # Check if the combination produces valid results
+                        if not np.any(np.isnan(combined_values)) and not np.any(np.isinf(combined_values)):
+                            enhanced_df[new_col_name] = combined_values
+                            print(f"  Generated feature: {new_col_name}")
+                    except Exception as e:
+                        op_name = operation.__name__.replace('_', '')
+                        print(f"  Error generating {op_name} for {col1} and {col2}: {e}")
+        
+        # Step 3: Generate polynomial features (degree 2)
+        if len(numeric_cols) >= 1:
+            try:
+                poly = PolynomialFeatures(degree=2, include_bias=False, interaction_only=False)
+                numeric_df = self.input_df[numeric_cols]
+                poly_features = poly.fit_transform(numeric_df)
+                
+                # Skip the first n features as they are the original features
+                poly_feature_names = []
+                
+                # Get the feature names from the transformer
+                for i, feature_name in enumerate(poly.get_feature_names_out(numeric_cols)):
+                    # Skip original features
+                    if i >= len(numeric_cols):
+                        poly_feature_names.append(feature_name.replace(' ', ''))
+                
+                # Add polynomial features to enhanced DataFrame
+                for i, feature_name in enumerate(poly_feature_names):
+                    # The +len(numeric_cols) is to skip the original features in poly_features
+                    feature_values = poly_features[:, i + len(numeric_cols)]
+                    
+                    # Check if the column already exists
+                    if feature_name in enhanced_df.columns:
+                        continue
+                    
+                    # Check if the values are valid
+                    if not np.any(np.isnan(feature_values)) and not np.any(np.isinf(feature_values)):
+                        enhanced_df[feature_name] = feature_values
+                        print(f"  Generated polynomial feature: {feature_name}")
+            except Exception as e:
+                print(f"  Error generating polynomial features: {e}")
+        
+        # Step 4: Generate categorical interactions if there are categorical columns
+        if categorical_cols:
+            # One-hot encode categorical columns if needed
+            for cat_col in categorical_cols:
+                dummies = pd.get_dummies(self.input_df[cat_col], prefix=cat_col)
+                
+                # Multiply numerical columns by each dummy variable
+                for num_col in numeric_cols:
+                    for dummy_col in dummies.columns:
+                        new_col_name = f"{num_col}_by_{dummy_col}"
+                        
+                        # Skip if column already exists
+                        if new_col_name in enhanced_df.columns:
+                            continue
+                        
+                        enhanced_df[new_col_name] = self.input_df[num_col] * dummies[dummy_col]
+                        print(f"  Generated categorical interaction: {new_col_name}")
+        
+        # Step 5: Find if output columns are highly correlated with any of the generated features
+        # This helps identify potential transformations
+        self._evaluate_candidate_features(enhanced_df)
+        
+        print(f"Generated {len(enhanced_df.columns) - len(self.input_df.columns)} new features")
+        return enhanced_df
+    
+    def _evaluate_candidate_features(self, enhanced_df):
+        """
+        Evaluate generated features by checking correlation with output columns.
         
         Args:
-            rules_dict (dict): Dictionary of true transformation rules
+            enhanced_df (pd.DataFrame): Enhanced input DataFrame with generated features
         """
-        print("\n=== TRUE TRANSFORMATION RULES ===")
-        for output_col, rule in rules_dict.items():
-            print(f"\n{output_col}:")
-            print(f"  {rule}")
-        print("================================\n")
-
-
-
-
-
-import pandas as pd
-import numpy as np
-from dataset_generator import DatasetGenerator
-from rule_discoverer import RuleDiscoverer
-from rule_validator import RuleValidator
-from categorical_handler import CategoricalHandler
-from feature_engineering import FeatureEngineer
-import json
-
-def run_example():
-    """Run an example of the automatic rule discovery system"""
-    print("=== Automatic Rule Discovery System ===\n")
-    
-    # 1. Generate synthetic data with known rules
-    print("Generating synthetic data...")
-    generator = DatasetGenerator(n_samples=200, n_input_cols=4, n_output_cols=6, categorical_cols=1)
-    input_df, output_df, true_rules = generator.generate_datasets()
-    
-    print(f"Generated input dataset with {len(input_df.columns)} columns and {len(input_df)} rows")
-    print(f"Generated output dataset with {len(output_df.columns)} columns and {len(output_df)} rows")
-    
-    # Print sample data
-    print("\nSample input data:")
-    print(input_df.head(3))
-    print("\nSample output data:")
-    print(output_df.head(3))
-    
-    # Print true rules
-    generator.print_true_rules(true_rules)
-    
-    # 2. Discover rules
-    print("Starting rule discovery process...")
-    categorical_cols = [col for col in input_df.columns if col.startswith('category')]
-    
-    # Initialize components
-    categorical_handler = CategoricalHandler(categorical_cols)
-    feature_engineer = FeatureEngineer(input_df, output_df)
-    rule_discoverer = RuleDiscoverer(categorical_handler)
-    rule_validator = RuleValidator()
-    
-    # Check if we need feature engineering (M > N)
-    if len(output_df.columns) > len(input_df.columns):
-        print(f"M ({len(output_df.columns)}) > N ({len(input_df.columns)}): Performing feature generation...")
-        enhanced_input_df = feature_engineer.generate_candidate_features()
-    else:
-        enhanced_input_df = input_df.copy()
-    
-    # Segment data by categorical features
-    segments = categorical_handler.segment_data(enhanced_input_df)
-    print(f"Data segmented into {len(segments)} segments based on categorical features")
-    
-    # Discover rules per segment
-    all_rules = {}
-    for segment_name, segment_df in segments.items():
-        segment_output = categorical_handler.get_corresponding_output(output_df, segment_df)
+        # Only analyze numeric columns
+        numeric_enhanced = enhanced_df.select_dtypes(include=['number'])
+        numeric_output = self.output_df.select_dtypes(include=['number'])
         
-        print(f"Discovering rules for segment: {segment_name}")
-        segment_rules = rule_discoverer.discover_rules(segment_df, segment_output)
+        if numeric_output.empty:
+            return
         
-        # Store discovered rules with segment information
-        for output_col, rule in segment_rules.items():
-            if output_col not in all_rules:
-                all_rules[output_col] = {}
-            all_rules[output_col][segment_name] = rule
-    
-    # 3. Validate rules
-    print("\nValidating discovered rules...")
-    validation_accuracy = rule_validator.validate_rules(all_rules, enhanced_input_df, output_df, categorical_handler)
-    
-    print(f"\nOverall rule validation accuracy: {validation_accuracy:.2f}")
-    
-    # 4. Compare discovered rules with true rules
-    print("\n=== DISCOVERED TRANSFORMATION RULES ===")
-    for output_col, rules_by_segment in all_rules.items():
-        print(f"\n{output_col}:")
-        if len(rules_by_segment) == 1:
-            # Single rule for all data
-            print(f"  {next(iter(rules_by_segment.values()))}")
-        else:
-            # Conditional rules
-            for segment, rule in rules_by_segment.items():
-                print(f"  When {segment}: {rule}")
-    print("======================================\n")
-    
-    # 5. Export discovered rules to JSON
-    with open('discovered_rules.json', 'w') as f:
-        # Convert numpy types to Python native types for JSON serialization
-        json_rules = {}
-        for output_col, rules_by_segment in all_rules.items():
-            json_rules[output_col] = {segment: rule for segment, rule in rules_by_segment.items()}
+        # Find correlations between generated features and output columns
+        print("\nTop correlations between generated features and output columns:")
         
-        json.dump(json_rules, f, indent=2)
+        for output_col in numeric_output.columns:
+            correlations = {}
+            
+            for feature_col in numeric_enhanced.columns:
+                if feature_col in self.input_df.columns:
+                    continue  # Skip original features
+                
+                try:
+                    # Calculate correlation
+                    corr = numeric_enhanced[feature_col].corr(numeric_output[output_col])
+                    
+                    if not np.isnan(corr):
+                        correlations[feature_col] = abs(corr)  # Use absolute correlation
+                except:
+                    continue
+            
+            # Sort by correlation (highest first)
+            sorted_corrs = sorted(correlations.items(), key=lambda x: x[1], reverse=True)
+            
+            # Print top 3 correlations
+            if sorted_corrs:
+                print(f"\nFor {output_col}:")
+                for feature, corr in sorted_corrs[:3]:
+                    print(f"  {feature}: correlation = {corr:.4f}")
     
-    print("Rules exported to 'discovered_rules.json'")
-
-def run_real_data_example(input_file, output_file, categorical_cols=None):
-    """
-    Run the rule discovery system on real data from CSV files.
+    # Helper operations
+    def _addition(self, a, b=None):
+        if b is not None:
+            return a + b
+        return a  # Placeholder for unary version
     
-    Args:
-        input_file (str): Path to input CSV file
-        output_file (str): Path to output CSV file
-        categorical_cols (list): List of categorical columns in the input data
-    """
-    print("=== Automatic Rule Discovery on Real Data ===\n")
+    def _subtraction(self, a, b=None):
+        if b is not None:
+            return a - b
+        return -a
     
-    # 1. Load data
-    print(f"Loading data from {input_file} and {output_file}...")
-    input_df = pd.read_csv(input_file)
-    output_df = pd.read_csv(output_file)
+    def _multiplication(self, a, b=None):
+        if b is not None:
+            return a * b
+        return a
     
-    print(f"Loaded input dataset with {len(input_df.columns)} columns and {len(input_df)} rows")
-    print(f"Loaded output dataset with {len(output_df.columns)} columns and {len(output_df)} rows")
+    def _division(self, a, b=None):
+        if b is not None:
+            return np.divide(a, b, out=np.zeros_like(a), where=b!=0)
+        return np.divide(1, a, out=np.zeros_like(a), where=a!=0)
     
-    # Print sample data
-    print("\nSample input data:")
-    print(input_df.head(3))
-    print("\nSample output data:")
-    print(output_df.head(3))
+    def _squared(self, a):
+        return a * a
     
-    # 2. Discover rules
-    print("Starting rule discovery process...")
+    def _square_root(self, a):
+        return np.sqrt(np.abs(a))  # Using abs to avoid complex numbers
     
-    # Initialize components
-    categorical_handler = CategoricalHandler(categorical_cols)
-    feature_engineer = FeatureEngineer(input_df, output_df)
-    rule_discoverer = RuleDiscoverer(categorical_handler)
-    rule_validator = RuleValidator()
+    def _log(self, a):
+        return np.log(np.abs(a) + 1e-10)  # Adding small constant to avoid log(0)
     
-    # Check if we need feature engineering (M > N)
-    if len(output_df.columns) > len(input_df.columns):
-        print(f"M ({len(output_df.columns)}) > N ({len(input_df.columns)}): Performing feature generation...")
-        enhanced_input_df = feature_engineer.generate_candidate_features()
-    else:
-        enhanced_input_df = input_df.copy()
+    def _exp(self, a):
+        return np.exp(a)
     
-    # Segment data by categorical features
-    segments = categorical_handler.segment_data(enhanced_input_df)
-    print(f"Data segmented into {len(segments)} segments based on categorical features")
-    
-    # Discover rules per segment
-    all_rules = {}
-    for segment_name, segment_df in segments.items():
-        segment_output = categorical_handler.get_corresponding_output(output_df, segment_df)
-        
-        print(f"Discovering rules for segment: {segment_name}")
-        segment_rules = rule_discoverer.discover_rules(segment_df, segment_output)
-        
-        # Store discovered rules with segment information
-        for output_col, rule in segment_rules.items():
-            if output_col not in all_rules:
-                all_rules[output_col] = {}
-            all_rules[output_col][segment_name] = rule
-    
-    # 3. Validate rules
-    print("\nValidating discovered rules...")
-    validation_accuracy = rule_validator.validate_rules(all_rules, enhanced_input_df, output_df, categorical_handler)
-    
-    print(f"\nOverall rule validation accuracy: {validation_accuracy:.2f}")
-    
-    # 4. Display discovered rules
-    print("\n=== DISCOVERED TRANSFORMATION RULES ===")
-    for output_col, rules_by_segment in all_rules.items():
-        print(f"\n{output_col}:")
-        if len(rules_by_segment) == 1:
-            # Single rule for all data
-            print(f"  {next(iter(rules_by_segment.values()))}")
-        else:
-            # Conditional rules
-            for segment, rule in rules_by_segment.items():
-                print(f"  When {segment}: {rule}")
-    print("======================================\n")
-    
-    # 5. Export discovered rules to JSON
-    with open('discovered_rules_real_data.json', 'w') as f:
-        json.dump(all_rules, f, indent=2)
-    
-    print("Rules exported to 'discovered_rules_real_data.json'")
-
-if __name__ == "__main__":
-    # Run with synthetic data
-    run_example()
-    
-    # Uncomment to run with real data
-    # run_real_data_example(
-    #     input_file="input_data.csv",
-    #     output_file="output_data.csv",
-    #     categorical_cols=["category1", "category2"]
-    # )
-
-
-
-
-
+    def _get_operation_symbol(self, operation):
+        """Get symbol representation of operation for column naming"""
+        if operation == self._addition:
+            return "+"
+        elif operation == self._subtraction:
+            return "-"
+        elif operation == self._multiplication:
+            return "*"
+        elif operation == self._division:
+            return "/"
+        return "_"
