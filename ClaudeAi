@@ -92,7 +92,10 @@ public class ModelAdapterDiscovery implements ApplicationListener<ContextRefresh
         ApplicationContext context = event.getApplicationContext();
         Map<String, ModelAdapter> adapters = context.getBeansOfType(ModelAdapter.class);
         
-        adapters.values().forEach(registry::registerAdapter);
+        // Using for-loop instead of lambda
+        for (ModelAdapter adapter : adapters.values()) {
+            registry.registerAdapter(adapter);
+        }
     }
 }
 
@@ -100,9 +103,9 @@ public class ModelAdapterDiscovery implements ApplicationListener<ContextRefresh
 package com.example.mapper;
 
 import org.springframework.stereotype.Service;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 public class ModelMapper {
@@ -121,9 +124,12 @@ public class ModelMapper {
             return Collections.emptyList();
         }
         
-        return sources.stream()
-                .map(source -> map(source, targetType))
-                .collect(Collectors.toList());
+        // Using for-loop instead of stream
+        List<T> result = new ArrayList<>(sources.size());
+        for (S source : sources) {
+            result.add(map(source, targetType));
+        }
+        return result;
     }
     
     public <S, T> List<T> mapListParallel(List<S> sources, Class<T> targetType) {
@@ -131,9 +137,41 @@ public class ModelMapper {
             return Collections.emptyList();
         }
         
-        return sources.parallelStream()
-                .map(source -> map(source, targetType))
-                .collect(Collectors.toList());
+        // Using for-loop with a synchronized list for parallel processing
+        List<T> result = Collections.synchronizedList(new ArrayList<>(sources.size()));
+        
+        // We'll use a simple ThreadPoolExecutor to handle parallelism
+        // In a real application, you might want to use Spring's TaskExecutor
+        int processors = Runtime.getRuntime().availableProcessors();
+        List<Thread> threads = new ArrayList<>(processors);
+        
+        int chunkSize = Math.max(1, sources.size() / processors);
+        
+        for (int t = 0; t < processors; t++) {
+            final int threadIndex = t;
+            Thread thread = new Thread(() -> {
+                int start = threadIndex * chunkSize;
+                int end = (threadIndex == processors - 1) ? sources.size() : (threadIndex + 1) * chunkSize;
+                
+                for (int i = start; i < end && i < sources.size(); i++) {
+                    result.add(map(sources.get(i), targetType));
+                }
+            });
+            threads.add(thread);
+            thread.start();
+        }
+        
+        // Wait for all threads to complete
+        for (Thread thread : threads) {
+            try {
+                thread.join();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RuntimeException("Interrupted during parallel mapping", e);
+            }
+        }
+        
+        return result;
     }
 }
 
@@ -191,15 +229,15 @@ package com.example.mapper;
 
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
-public class ModelMapper {
+public class CachedModelMapper {
     private final ModelMapperRegistry registry;
     
-    public ModelMapper(ModelMapperRegistry registry) {
+    public CachedModelMapper(ModelMapperRegistry registry) {
         this.registry = registry;
     }
     
@@ -208,5 +246,5 @@ public class ModelMapper {
         return registry.map(source, targetType);
     }
     
-    // Other methods remain the same
+    // Other methods would be similar to the regular ModelMapper
 }
