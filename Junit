@@ -1,38 +1,445 @@
-We have an input dataset with N columns and an output dataset with M columns, where M may be greater than, equal to, or less than N. Each output column is derived from one or 
-more input columns using unknown transformation rules, which may vary based on categorical features.
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.stereotype.Component;
 
-Key Challenges & Considerations
-✅ M vs. N Relationship
+import java.io.IOException;
+import java.util.*;
 
-If M > N, then new output columns are derived through feature generation (e.g., output_col3 = input_col1 + input_col2).
+/**
+ * Advanced utility for standardizing JSON from different sources
+ * with support for complex mapping scenarios between different nesting levels
+ */
+@Component
+public class AdvancedJsonStandardizer {
 
-If M < N, then multiple input columns contribute to fewer output features, possibly via aggregation or selection (e.g., output_col1 = max(input_col1, input_col2)).
+    private final ObjectMapper objectMapper;
+    private final Map<String, SystemMappingConfig> systemConfigurations;
 
-✅ Handling Categorical Dependencies
+    public AdvancedJsonStandardizer() {
+        this.objectMapper = new ObjectMapper();
+        this.systemConfigurations = initializeSystemConfigurations();
+    }
 
-The transformation rule for an output column may change depending on a categorical feature.
+    /**
+     * Convert source JSON to standard format with support for complex mappings
+     * 
+     * @param sourceJson The source JSON string
+     * @param sourceSystem The identifier for the source system
+     * @return Standardized JSON string
+     */
+    public String convertToStandard(String sourceJson, String sourceSystem) throws IOException {
+        JsonNode sourceNode = objectMapper.readTree(sourceJson);
+        ObjectNode standardNode = objectMapper.createObjectNode();
+        
+        SystemMappingConfig config = systemConfigurations.get(sourceSystem);
+        if (config == null) {
+            throw new IllegalArgumentException("Unknown source system: " + sourceSystem);
+        }
+        
+        // Process all field mappings
+        for (FieldMapping mapping : config.getFieldMappings()) {
+            applyMapping(mapping, sourceNode, standardNode);
+        }
+        
+        return objectMapper.writeValueAsString(standardNode);
+    }
+    
+    /**
+     * Apply a field mapping by extracting data from source and placing in target
+     */
+    private void applyMapping(FieldMapping mapping, JsonNode sourceRoot, ObjectNode targetRoot) {
+        // Get source value using path expression
+        JsonNode sourceValue = getValueByPath(sourceRoot, mapping.getSourcePath());
+        
+        // If source value doesn't exist, skip this mapping
+        if (sourceValue == null || sourceValue.isMissingNode()) {
+            return;
+        }
+        
+        // Set value in target using path expression
+        setValueByPath(targetRoot, mapping.getTargetPath(), sourceValue);
+    }
+    
+    /**
+     * Get a value from a JSON node using a path expression like "address.city" or "contacts[0].email"
+     */
+    private JsonNode getValueByPath(JsonNode rootNode, String path) {
+        String[] pathSegments = path.split("\\.");
+        JsonNode currentNode = rootNode;
+        
+        for (String segment : pathSegments) {
+            // Handle array indexing like "contacts[0]"
+            if (segment.contains("[") && segment.endsWith("]")) {
+                String arrayName = segment.substring(0, segment.indexOf("["));
+                int index = Integer.parseInt(segment.substring(segment.indexOf("[") + 1, segment.length() - 1));
+                
+                if (!currentNode.has(arrayName) || !currentNode.get(arrayName).isArray()) {
+                    return null;
+                }
+                
+                JsonNode arrayNode = currentNode.get(arrayName);
+                if (index >= arrayNode.size()) {
+                    return null;
+                }
+                
+                currentNode = arrayNode.get(index);
+            } else {
+                // Regular field access
+                if (!currentNode.has(segment)) {
+                    return null;
+                }
+                currentNode = currentNode.get(segment);
+            }
+        }
+        
+        return currentNode;
+    }
+    
+    /**
+     * Set a value in a JSON node using a path expression, creating intermediate objects as needed
+     */
+    private void setValueByPath(ObjectNode rootNode, String path, JsonNode value) {
+        String[] pathSegments = path.split("\\.");
+        
+        // Special case for root level assignment
+        if (pathSegments.length == 1) {
+            copyNodeToTarget(rootNode, pathSegments[0], value);
+            return;
+        }
+        
+        // Navigate and create path as needed
+        ObjectNode currentNode = rootNode;
+        for (int i = 0; i < pathSegments.length - 1; i++) {
+            String segment = pathSegments[i];
+            
+            // Handle array indexing in path (create arrays as needed)
+            if (segment.contains("[") && segment.endsWith("]")) {
+                String arrayName = segment.substring(0, segment.indexOf("["));
+                int index = Integer.parseInt(segment.substring(segment.indexOf("[") + 1, segment.length() - 1));
+                
+                // Ensure array exists
+                if (!currentNode.has(arrayName) || !currentNode.get(arrayName).isArray()) {
+                    currentNode.putArray(arrayName);
+                }
+                
+                ArrayNode arrayNode = (ArrayNode) currentNode.get(arrayName);
+                
+                // Ensure array has enough elements
+                while (arrayNode.size() <= index) {
+                    arrayNode.addObject();
+                }
+                
+                currentNode = (ObjectNode) arrayNode.get(index);
+            } else {
+                // Regular field - create if doesn't exist
+                if (!currentNode.has(segment) || !currentNode.get(segment).isObject()) {
+                    currentNode.putObject(segment);
+                }
+                
+                currentNode = (ObjectNode) currentNode.get(segment);
+            }
+        }
+        
+        // Set the actual value at the final path segment
+        String finalSegment = pathSegments[pathSegments.length - 1];
+        copyNodeToTarget(currentNode, finalSegment, value);
+    }
+    
+    /**
+     * Copy a value to a target node, preserving its type
+     */
+    private void copyNodeToTarget(ObjectNode target, String fieldName, JsonNode value) {
+        // Handle array indexing for final field
+        if (fieldName.contains("[") && fieldName.endsWith("]")) {
+            String arrayName = fieldName.substring(0, fieldName.indexOf("["));
+            int index = Integer.parseInt(fieldName.substring(fieldName.indexOf("[") + 1, fieldName.length() - 1));
+            
+            // Ensure array exists
+            if (!target.has(arrayName) || !target.get(arrayName).isArray()) {
+                target.putArray(arrayName);
+            }
+            
+            ArrayNode arrayNode = (ArrayNode) target.get(arrayName);
+            
+            // Ensure array has enough elements
+            while (arrayNode.size() <= index) {
+                arrayNode.addNull();
+            }
+            
+            // Set the value at the specified index
+            if (value.isNull()) {
+                arrayNode.set(index, null);
+            } else if (value.isTextual()) {
+                arrayNode.set(index, value.textValue());
+            } else if (value.isInt()) {
+                arrayNode.set(index, value.intValue());
+            } else if (value.isLong()) {
+                arrayNode.set(index, value.longValue());
+            } else if (value.isDouble() || value.isFloat()) {
+                arrayNode.set(index, value.doubleValue());
+            } else if (value.isBoolean()) {
+                arrayNode.set(index, value.booleanValue());
+            } else if (value.isObject() || value.isArray()) {
+                arrayNode.set(index, value);
+            }
+        } else {
+            // Regular field assignment
+            if (value.isNull()) {
+                target.putNull(fieldName);
+            } else if (value.isTextual()) {
+                target.put(fieldName, value.textValue());
+            } else if (value.isInt()) {
+                target.put(fieldName, value.intValue());
+            } else if (value.isLong()) {
+                target.put(fieldName, value.longValue());
+            } else if (value.isDouble() || value.isFloat()) {
+                target.put(fieldName, value.doubleValue());
+            } else if (value.isBoolean()) {
+                target.put(fieldName, value.booleanValue());
+            } else if (value.isObject() || value.isArray()) {
+                target.set(fieldName, value);
+            }
+        }
+    }
+    
+    /**
+     * Initialize configurations for all known source systems
+     */
+    private Map<String, SystemMappingConfig> initializeSystemConfigurations() {
+        Map<String, SystemMappingConfig> configs = new HashMap<>();
+        
+        // CRM System Example
+        SystemMappingConfig crmConfig = new SystemMappingConfig("CRM");
+        
+        // Simple field mappings
+        crmConfig.addFieldMapping("customerId", "id");
+        crmConfig.addFieldMapping("customerName", "fullName");
+        crmConfig.addFieldMapping("age", "age");
+        
+        // Nested source to root target
+        crmConfig.addFieldMapping("customerAddress.emailAddress", "email");
+        
+        // Root source to nested target
+        crmConfig.addFieldMapping("phoneNumber", "contactInfo.phone");
+        
+        // Nested to differently nested
+        crmConfig.addFieldMapping("customerAddress.addressLine1", "address.streetName");
+        crmConfig.addFieldMapping("customerAddress.city", "address.cityName");
+        crmConfig.addFieldMapping("customerAddress.postCode", "address.postalCode");
+        
+        // Array access
+        crmConfig.addFieldMapping("tags[0]", "primaryTag");
+        crmConfig.addFieldMapping("customerContacts[0].name", "primaryContact.name");
+        crmConfig.addFieldMapping("customerContacts[0].phone", "primaryContact.phoneNumber");
+        
+        configs.put("CRM", crmConfig);
+        
+        // ERP System Example
+        SystemMappingConfig erpConfig = new SystemMappingConfig("ERP");
+        
+        // Complex nested mappings
+        erpConfig.addFieldMapping("person.id", "id");
+        erpConfig.addFieldMapping("person.details.name", "fullName");
+        erpConfig.addFieldMapping("person.details.age", "age");
+        
+        // Root level to nested and vice versa
+        erpConfig.addFieldMapping("email", "contactInfo.email");
+        erpConfig.addFieldMapping("person.location.phoneNumbers[0]", "contactInfo.phone");
+        
+        // Complex nested structure
+        erpConfig.addFieldMapping("person.location.address.street", "address.streetName");
+        erpConfig.addFieldMapping("person.location.address.city", "address.cityName");
+        erpConfig.addFieldMapping("person.location.address.zip", "address.postalCode");
+        erpConfig.addFieldMapping("person.location.address.country", "address.countryName");
+        
+        // Array mappings
+        erpConfig.addFieldMapping("person.details.socialMedia[0]", "socialMedia.primary");
+        erpConfig.addFieldMapping("person.details.socialMedia[1]", "socialMedia.secondary");
+        
+        configs.put("ERP", erpConfig);
+        
+        return configs;
+    }
 
-Example:
+    /**
+     * Class to hold configuration for a source system
+     */
+    private static class SystemMappingConfig {
+        private final String systemId;
+        private final List<FieldMapping> fieldMappings;
+        
+        public SystemMappingConfig(String systemId) {
+            this.systemId = systemId;
+            this.fieldMappings = new ArrayList<>();
+        }
+        
+        public void addFieldMapping(String sourcePath, String targetPath) {
+            fieldMappings.add(new FieldMapping(sourcePath, targetPath));
+        }
+        
+        public String getSystemId() {
+            return systemId;
+        }
+        
+        public List<FieldMapping> getFieldMappings() {
+            return fieldMappings;
+        }
+    }
+    
+    /**
+     * Class to represent a mapping between source and target field paths
+     */
+    private static class FieldMapping {
+        private final String sourcePath;
+        private final String targetPath;
+        
+        public FieldMapping(String sourcePath, String targetPath) {
+            this.sourcePath = sourcePath;
+            this.targetPath = targetPath;
+        }
+        
+        public String getSourcePath() {
+            return sourcePath;
+        }
+        
+        public String getTargetPath() {
+            return targetPath;
+        }
+    }
+}
 
-If category = "A", output_col1 = input_col1 * 2
-If category = "B", output_col1 = input_col2 + 10
-This requires conditional rule extraction rather than just mathematical transformations.
+/**
+ * Example usage class showing how to handle complex mapping scenarios
+ */
+public class ComplexMappingExample {
+    
+    public static void main(String[] args) {
+        try {
+            AdvancedJsonStandardizer standardizer = new AdvancedJsonStandardizer();
+            
+            // Example CRM JSON with complex structure
+            String crmJson = "{\n" +
+                "  \"customerId\": \"CRM-001\",\n" +
+                "  \"customerName\": \"John Smith\",\n" +
+                "  \"age\": 35,\n" +
+                "  \"phoneNumber\": \"555-123-4567\",\n" +
+                "  \"tags\": [\"VIP\", \"Retail\", \"New\"],\n" +
+                "  \"customerAddress\": {\n" +
+                "    \"addressLine1\": \"123 Main Street\",\n" +
+                "    \"city\": \"Boston\",\n" +
+                "    \"postCode\": \"02108\",\n" +
+                "    \"country\": \"USA\",\n" +
+                "    \"emailAddress\": \"john.smith@example.com\"\n" +
+                "  },\n" +
+                "  \"customerContacts\": [\n" +
+                "    {\n" +
+                "      \"name\": \"Jane Smith\",\n" +
+                "      \"relationship\": \"Spouse\",\n" +
+                "      \"phone\": \"555-987-6543\"\n" +
+                "    },\n" +
+                "    {\n" +
+                "      \"name\": \"Bob Smith\",\n" +
+                "      \"relationship\": \"Son\",\n" +
+                "      \"phone\": \"555-345-6789\"\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}";
+            
+            // Standardize the CRM JSON
+            String standardizedCrm = standardizer.convertToStandard(crmJson, "CRM");
+            System.out.println("Standardized CRM JSON:");
+            System.out.println(standardizedCrm);
+            
+            // Example ERP JSON with a different complex structure
+            String erpJson = "{\n" +
+                "  \"email\": \"jane.doe@example.com\",\n" +
+                "  \"person\": {\n" +
+                "    \"id\": \"ERP-A12\",\n" +
+                "    \"details\": {\n" +
+                "      \"name\": \"Jane Doe\",\n" +
+                "      \"age\": 28,\n" +
+                "      \"socialMedia\": [\"twitter.com/jane\", \"linkedin.com/in/jane\"]\n" +
+                "    },\n" +
+                "    \"location\": {\n" +
+                "      \"phoneNumbers\": [\"555-765-4321\", \"555-999-8888\"],\n" +
+                "      \"address\": {\n" +
+                "        \"street\": \"456 Park Avenue\",\n" +
+                "        \"city\": \"New York\",\n" +
+                "        \"zip\": \"10022\",\n" +
+                "        \"country\": \"USA\"\n" +
+                "      }\n" +
+                "    }\n" +
+                "  }\n" +
+                "}";
+            
+            // Standardize the ERP JSON
+            String standardizedErp = standardizer.convertToStandard(erpJson, "ERP");
+            System.out.println("\nStandardized ERP JSON:");
+            System.out.println(standardizedErp);
+            
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
 
-✅ Different Values for the Same Output Column
+/**
+ * Example to demonstrate loading mappings from external configuration
+ */
+public class ExternalConfigExample {
 
-The same input row may produce different output values depending on external conditions.
-
-Example:
-
-input_col1 = 50, category = "A"  → output_col1 = 100
-input_col1 = 50, category = "B"  → output_col1 = 60
-This means rule discovery needs to segment data by categorical attributes.
-
-Objective
-Automatically derive transformation rules that map input columns (N) to output columns (M).
-
-Detect conditional logic where an output column's rule varies based on a categorical input.
-
-Support feature engineering cases where extra columns are generated (M > N) or reduced (M < N).
-
-Validate rules by applying them to unseen data and ensuring accuracy.
+    /**
+     * Load mapping configuration from an external source
+     */
+    public static SystemMappingConfig loadMappingFromConfig(String configSource) {
+        // In a real implementation, this would load from a file, database, etc.
+        // This is a simplified example
+        
+        SystemMappingConfig config = new SystemMappingConfig("NEW_SYSTEM");
+        
+        // Assume we have a properties file, XML, or database record with the mappings
+        // Parse it and create the mapping config
+        
+        // Example: Loading from properties (simplified)
+        /*
+        Properties props = new Properties();
+        props.load(new FileInputStream(configSource));
+        
+        // Get all mapping entries
+        for (String key : props.stringPropertyNames()) {
+            if (key.startsWith("mapping.")) {
+                String sourcePath = key.substring("mapping.".length());
+                String targetPath = props.getProperty(key);
+                config.addFieldMapping(sourcePath, targetPath);
+            }
+        }
+        */
+        
+        return config;
+    }
+    
+    /**
+     * Example of how to load mappings from a JSON configuration
+     */
+    public static SystemMappingConfig loadMappingFromJson(String jsonConfig) throws IOException {
+        // Parse the configuration JSON
+        ObjectMapper mapper = new ObjectMapper();
+        JsonNode config = mapper.readTree(jsonConfig);
+        
+        SystemMappingConfig mappingConfig = new SystemMappingConfig(
+            config.get("systemId").asText()
+        );
+        
+        // Load field mappings
+        JsonNode mappings = config.get("mappings");
+        for (JsonNode mapping : mappings) {
+            String sourcePath = mapping.get("source").asText();
+            String targetPath = mapping.get("target").asText();
+            mappingConfig.addFieldMapping(sourcePath, targetPath);
+        }
+        
+        return mappingConfig;
+    }
+}
