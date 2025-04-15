@@ -443,3 +443,79 @@ public class ExternalConfigExample {
         return mappingConfig;
     }
 }
+
+
+{
+  "customerId": "CRM-001",
+  "customerName": "John Smith",
+  "age": 35,
+  "phoneNumber": "555-123-4567",
+  "customerAddress": {
+    "addressLine1": "123 Main Street",
+    "city": "Boston",
+    "postCode": "02108",
+    "emailAddress": "john.smith@example.com"  // Nested field to be mapped to root
+  },
+  "customerContacts": [
+    {
+      "name": "Jane Smith",
+      "phone": "555-987-6543"
+    }
+  ]
+}
+
+
+{
+  "email": "jane.doe@example.com",  // Root field to be mapped to nested
+  "person": {
+    "id": "ERP-A12",
+    "details": {
+      "name": "Jane Doe",
+      "age": 28
+    },
+    "location": {
+      "phoneNumbers": ["555-765-4321"],
+      "address": {
+        "street": "456 Park Avenue",
+        "city": "New York"
+      }
+    }
+  }
+}
+
+
+{
+  "id": "CRM-001",
+  "fullName": "John Smith",
+  "age": 35,
+  "email": "john.smith@example.com",  // From nested in CRM
+  "contactInfo": {
+    "phone": "555-123-4567"          // From root in CRM
+  },
+  "address": {
+    "streetName": "123 Main Street",  // Nested to differently nested
+    "cityName": "Boston",
+    "postalCode": "02108"
+  },
+  "primaryContact": {
+    "name": "Jane Smith",             // From array element
+    "phoneNumber": "555-987-6543"
+  }
+}
+
+
+How to Use It:
+java// Create standardizer
+AdvancedJsonStandardizer standardizer = new AdvancedJsonStandardizer();
+
+// Convert JSON from source systems
+String standardizedJson = standardizer.convertToStandard(sourceJson, "CRM");
+Adding New Mapping Configurations:
+You define mappings using path expressions that describe exactly where to find the source data and where to place it in the target:
+java// Creating a new system config
+SystemMappingConfig config = new SystemMappingConfig("NEW_SYSTEM");
+
+// Adding mappings with path expressions
+config.addFieldMapping("source.nested.field", "target.nested.field");
+config.addFieldMapping("deeply.nested.source.field", "root_target_field");
+config.addFieldMapping("root_source_field", "deeply.nested.target.field");
